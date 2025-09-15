@@ -1,0 +1,9 @@
+from __future__ import annotations
+import contextvars
+_tenant_ctx = contextvars.ContextVar("tenant", default=None)
+
+def set_tenant(t):
+    _tenant_ctx.set(t)
+
+def get_tenant():
+    return _tenant_ctx.get()

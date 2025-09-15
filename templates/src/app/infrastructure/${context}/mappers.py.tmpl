@@ -1,0 +1,10 @@
+from __future__ import annotations
+from uuid import UUID
+from ..${context}.models import ${ContextCap}Model
+from ...domain.${context}.entities import ${ContextCap}
+
+def to_domain(m: ${ContextCap}Model) -> ${ContextCap}:
+    return ${ContextCap}(id=UUID(m.id), name=m.name, email=m.email)
+
+def to_model(e: ${ContextCap}) -> ${ContextCap}Model:
+    return ${ContextCap}Model(id=str(e.id), name=e.name, email=e.email)

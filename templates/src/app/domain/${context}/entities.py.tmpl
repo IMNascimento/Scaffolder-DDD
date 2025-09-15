@@ -1,0 +1,13 @@
+from __future__ import annotations
+from dataclasses import dataclass
+from uuid import UUID, uuid4
+
+@dataclass(slots=True)
+class ${ContextCap}:
+    id: UUID
+    name: str
+    email: str
+
+    @staticmethod
+    def new(name: str, email: str) -> "${ContextCap}":
+        return ${ContextCap}(id=uuid4(), name=name, email=email)

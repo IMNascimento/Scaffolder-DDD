@@ -1,79 +1,102 @@
-# [Nome do Projeto]
+# Scaffolder Fastapi + DDD
+
+<img src="./architecture.png" alt="Logo Spectro">
 
 ![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Version](https://img.shields.io/badge/version-1.0.0-blue)
 
-## Introdução
+## 🚀 Introdução
 
-[Nome do Projeto] é uma ferramenta [descreva a principal funcionalidade ou objetivo do projeto] que oferece [benefícios principais]. Desenvolvido como um projeto open source, nosso objetivo é [explicar o objetivo principal do projeto].
+**Scaffolder Fastapi + DDD** é uma ferramenta de scaffolding que gera automaticamente um projeto FastAPI estruturado em **DDD (Domain-Driven Design)** e **Arquitetura Hexagonal**.  
+Ele cria toda a base do projeto (domain, application, infrastructure, API, testes, scripts, Docker, Alembic, etc.) a partir de templates prontos, permitindo subir rapidamente novos bounded contexts em repositórios separados.
 
-## Funcionalidades
+## ✨ Funcionalidades
 
-- Funcionalidade 1
-- Funcionalidade 2
-- Funcionalidade 3
-- [Adicione outras funcionalidades importantes]
+- Geração automática de estrutura **DDD/Hexagonal**
+- Suporte a múltiplos **bounded contexts**
+- Configuração pronta para **FastAPI + SQLAlchemy 2.x + Alembic**
+- Criação opcional de **venv + instalação de libs mais recentes**
+- Scripts utilitários para desenvolvimento (`dev.sh`, `migrate.sh`, `wait-for-db.sh`)
+- Suporte a **Docker/Docker Compose**
+- Inclui ferramentas de qualidade: **pytest, ruff, mypy, pre-commit**
 
-## Pré-requisitos
+## 📦 Pré-requisitos
 
-Antes de começar, certifique-se de ter as seguintes ferramentas instaladas:
+Antes de começar, certifique-se de ter instalado:
 
-- [Linguagem/Framework] versão X.X.X
-- [Banco de Dados]
-- [Dependências principais]
-- [Outros requisitos]
+- **Python** 3.11+  
+- **Git**  
+- **Docker** e **Docker Compose** (opcional, para rodar via containers)  
 
-## Instalação
+## ⚙️ Instalação
 
-Siga as etapas abaixo para configurar o projeto em sua máquina local:
-
-1. Clone o repositório:
-    ```bash
-    git clone https://github.com/usuario/repo.git
-    ```
-2. Navegue até o diretório do projeto:
-    ```bash
-    cd nome-do-projeto
-    ```
-3. Crie e ative o ambiente virtual:
-    ```bash
-    python -m venv venv
-    source venv/bin/activate  # Para Linux/MacOS
-    .\venv\Scripts\activate  # Para Windows
-    ```
-4. Instale as dependências:
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-## Uso
-
-Após a instalação, você pode iniciar a aplicação com o seguinte comando:
+Clone o repositório e rode o scaffolder:
 
 ```bash
-python manage.py runserver
+git clone https://github.com/IMNascimento/scaffolder-DDD.git
+cd scaffolder-DDD
 ```
 
-Acesse o projeto em http://localhost:8000.
+Para criar um novo projeto:
 
-## Exemplos de Uso
-```python
-# Exemplo de código mostrando como usar a funcionalidade principal do projeto
+```bash
+python foundry.py meu-servico --context customer
 ```
 
-## Contribuindo
+Com ambiente virtual automático e dependências instaladas:
 
-Contribuições são bem-vindas! Por favor, siga as diretrizes em CONTRIBUTING.md para fazer um pull request.
+```bash
+python foundry.py meu-servico --context customer --venv
+```
 
-## Licença
+## ▶️ Uso
 
-Distribuído sob a licença MIT. Veja LICENSE para mais informações.
+Entre no diretório do serviço gerado e inicialize:
 
-## Autores
+```bash
+cd meu-servico
+cp .env.example .env
+./scripts/dev.sh
+```
 
-Seu Nome - Desenvolvedor Principal - Seu Perfil GitHub
+A API estará disponível em:  
+👉 http://localhost:8000/docs
 
-## Agradecimentos
-[Recursos ou bibliotecas que você usou]
-[Qualquer outra pessoa ou organização que você queira mencionar]
+### Exemplos de geração
+
+Criar projeto `orium-customer` com bounded context **customer**:
+```bash
+python foundry.py orium-customer --context customer
+```
+
+Criar projeto `orium-order` com bounded context **order**:
+```bash
+python foundry.py orium-order --context order
+```
+
+Gerar projeto já com virtualenv e dependências:
+```bash
+python foundry.py payments-service --context payment --venv
+```
+
+## 🤝 Contribuindo
+
+Contribuições são bem-vindas!  
+Abra uma **issue** ou envie um **pull request** seguindo as boas práticas do repositório.
+
+## 📜 Licença
+
+Distribuído sob a licença MIT.  
+Consulte o arquivo [LICENSE](LICENSE) para mais informações.
+
+## 👤 Autor
+
+- **Igor Nascimento** – Desenvolvedor Principal – [GitHub](https://github.com/IMNascimento)
+
+## 🙏 Agradecimentos
+
+- [FastAPI](https://fastapi.tiangolo.com/)  
+- [SQLAlchemy](https://www.sqlalchemy.org/)  
+- [Alembic](https://alembic.sqlalchemy.org/)  
+- Comunidade DDD & Python por inspiração
