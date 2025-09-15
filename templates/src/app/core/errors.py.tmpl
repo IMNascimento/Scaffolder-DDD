@@ -1,0 +1,22 @@
+from __future__ import annotations
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+class Problem(BaseModel):
+    type: str
+    title: str
+    detail: str | None = None
+    status: int
+
+class DomainError(RuntimeError):
+    code = "domain_error"
+    status_code = 422
+
+class NotFoundError(DomainError):
+    code = "not_found"
+    status_code = 404
+
+async def problem_handler(_: Request, exc: DomainError) -> JSONResponse:
+    body = Problem(type=f"urn:problem:{exc.code}", title=exc.__class__.__name__, detail=str(exc), status=exc.status_code)
+    return JSONResponse(status_code=exc.status_code, content=body.model_dump())

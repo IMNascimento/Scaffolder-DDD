@@ -1,0 +1,351 @@
+# ${project_name} — Convenções de Arquitetura e Código
+
+> Este documento define **como aplicar DDD + Arquitetura Hexagonal (Ports & Adapters)** neste repositório, incluindo **nomenclatura, layout de pastas/arquivos, regras de dependência, UoW, rotas HTTP, schemas, migrações** e **boas práticas**. Use-o como padrão para novos _bounded contexts_ e PRs.
+
+---
+
+## Visão Geral
+
+- **Objetivo**: isolar o **Domínio** das preocupações de **Infraestrutura** e da camada de **Entrada (API)**. Regras de negócio ficam no **Domínio** e são orquestradas pela **Aplicação**.
+- **Pilares**:
+  - **DDD**: Entidades, Objetos de Valor, Eventos e Repositórios (Ports).
+  - **Hexagonal**: **Ports** no domínio, **Adapters** na infraestrutura.
+  - **UoW**: Unidade transacional por caso de uso.
+  - **Baixo acoplamento**: API apenas orquestra, sem regra de negócio.
+
+---
+
+## Estrutura de Pastas (raiz do projeto gerado)
+
+```text
+./
+├── .env.example
+├── requirements.txt
+├── requirements.bootstrap.txt
+├── docker-compose.yml
+├── Dockerfile
+├── scripts/
+│   ├── dev.sh
+│   ├── migrate.sh
+│   └── wait-for-db.sh
+├── alembic/
+│   ├── env.py
+│   ├── script.py.mako
+│   └── versions/
+└── src/
+    └── app/
+        ├── main.py
+        ├── bootstrap.py
+        ├── core/
+        │   ├── config.py
+        │   ├── logging.py
+        │   ├── db.py
+        │   ├── errors.py
+        │   └── tenant.py
+        ├── api/
+        │   ├── router.py
+        │   ├── routers/
+        │   │   ├── health.py
+        │   │   └── ${context}.py
+        │   ├── schemas/
+        │   │   └── ${context}.py
+        │   └── deps/
+        │       ├── security.py      # stubs (integração externa)
+        │       └── uow.py           # Depends(UnitOfWork)
+        ├── domain/
+        │   ├── ports/
+        │   │   └── uow.py
+        │   ├── services/            # (vazio por padrão)
+        │   ├── events/              # (vazio por padrão)
+        │   ├── value_objects/       # (vazio por padrão)
+        │   └── ${context}/
+        │       ├── entities.py
+        │       └── repositories.py  # Ports do contexto
+        ├── application/
+        │   └── ${context}/
+        │       └── use_cases.py
+        └── infrastructure/
+            ├── uow/
+            │   └── sqlalchemy.py    # Adapter de UoW
+            └── ${context}/
+                ├── models.py         # ORM
+                ├── mappers.py        # map <-> domínio
+                └── repository_impl.py
+```
+
+### Regras de dependência (import graph)
+
+- **domain/** → (sem dependências externas)
+- **application/** → **domain/** (+ `app.core.errors` opcional)
+- **infrastructure/** → **domain/** + libs externas (SQLAlchemy, HTTP, etc.)
+- **api/** → **application/**, **domain.schemas** (DTOs via `api/schemas`), **core/**
+- **core/** → utilitários e config (pode ser usado por todas as camadas)
+
+> **Nunca**: `domain` importar `infrastructure` ou `api`. `application` não deve importar `api`.
+
+---
+
+## Domínio (Domain)
+
+### Entidades
+- Em `domain/${context}/entities.py`.
+- `@dataclass(slots=True)` quando possível.
+- Identidade explícita (ex.: `UUID`).
+- Invariantes **dentro da entidade** (métodos e validações locais).
+
+### Objetos de Valor (Value Objects)
+- Em `domain/value_objects/`.
+- `@dataclass(frozen=True)`; igualdade por valor; sem identidade própria.
+
+### Eventos de Domínio
+- Em `domain/events/`.
+- Classes simples (ex.: `class CustomerCreated(DomainEvent): ...`).
+- **Publicação**: por ora manual (ex.: retorno do use case). Se necessário, adicionar _dispatcher_ futuro.
+
+### Ports
+- Em `domain/${context}/repositories.py` (por contexto) e `domain/ports/uow.py` (cross-cutting).
+- **Repositories** expõem apenas o necessário (ex.: `add`, `get`, `by_email`, `list`).
+- **UnitOfWork** agrega os repositórios disponíveis por contexto e fornece `commit/rollback`.
+
+---
+
+## Aplicação (Application)
+
+- Em `application/${context}/use_cases.py`.
+- Caso de uso **orquestra** entidades/ports e **abre** uma UoW:
+
+```python
+@dataclass
+class Create${ContextCap}:
+    uow: UnitOfWork
+    async def __call__(self, name: str, email: str) -> ${ContextCap}:
+        async with self.uow as uow:
+            if await uow.${context}s.by_email(email):
+                raise ValueError("Email já utilizado")
+            c = ${ContextCap}.new(name=name, email=email)
+            await uow.${context}s.add(c)
+            return c
+```
+
+- **Sem** dependências de FastAPI, SQLAlchemy, HTTPX, etc.
+- **Erros** de domínio → lançar `DomainError`/`NotFoundError` do `core.errors`.
+
+---
+
+## Infraestrutura (Adapters)
+
+- **ORM**: `infrastructure/${context}/models.py` com SQLAlchemy 2.x.
+- **Mappers**: `infrastructure/${context}/mappers.py` (model ⇄ entidade).
+- **Repositories**: `infrastructure/${context}/repository_impl.py` implementa as **Ports** do domínio.
+- **UoW**: `infrastructure/uow/sqlalchemy.py` cria a sessão (`SessionMaker`), instancia repositórios e gerencia transação (`commit/rollback`).
+
+### Regras
+- **Não** propagar `AsyncSession` fora da infra.
+- **Não** retornar models do ORM para camadas superiores: sempre **entidade de domínio**.
+- Índices/constraints no banco devem refletir invariantes relevantes.
+
+---
+
+## API (Entrada HTTP)
+
+- **Routers** em `api/routers/` e **Schemas** em `api/schemas/`.
+- **Sem** regra de negócio; converte HTTP ⇄ DTOs (Schemas) e delega ao use case.
+- **Segurança**: integração externa futura → `api/deps/security.py` com **stubs** (`pass`).
+
+### Convenções de Rotas
+- Base: `${api_prefix}` (ex.: `/api`).
+- Recurso plural: `/${context}s`.
+- Exemplos:
+  - `POST /${api_prefix}/${context}s/` → **201** + body `${ContextCap}Out`
+  - `GET  /${api_prefix}/${context}s/{id}` → **200** + body `${ContextCap}Out`
+  - `GET  /${api_prefix}/${context}s/?limit&offset` → **200** + `list[${ContextCap}Out]`
+
+### Erros
+- Usar `core.errors` com resposta **Problem+JSON** (RFC 7807-like). Mapeado por handler global.
+
+### Schemas (DTOs)
+- Sufixos `In`/`Out` (ex.: `${ContextCap}In`, `${ContextCap}Out`).
+- Tipos fortes (`EmailStr`, `UUID`).
+- O **domínio não** importa schemas; schemas pertencem à API.
+
+---
+
+## UoW (Unit of Work)
+
+- **Port**: `domain/ports/uow.py`.
+- **Adapter**: `infrastructure/uow/sqlalchemy.py`.
+- **Uso** (Application): `async with self.uow as uow:` garante transação por caso de uso.
+- **Uso** (API): injetar com `Depends(uow_dep)` em `api/deps/uow.py`.
+
+---
+
+## Configuração & DB
+
+- **Config**: `core/config.py` (Pydantic Settings) com `.env`.
+- **DB**: `core/db.py` cria `engine`/`SessionMaker`. Usar **SQLAlchemy 2.x async**.
+- **Tenancy** (opcional): `core/tenant.py` com `ContextVar` e header `X-Tenant-Id`.
+
+---
+
+## Migrações (Alembic)
+
+1. Garanta `PYTHONPATH=./src` para o CLI do Alembic importar `app.*`.
+2. **Init** (já feito pelo gerador): `alembic init -t async alembic`.
+3. **Autogenerate**: `alembic revision --autogenerate -m "<mensagem>"`.
+4. **Upgrade**: `alembic upgrade head`.
+
+> O `alembic/env.py` é **patchado** para usar `app.core.db.Base/engine` e importar os models do contexto inicial (${context}). Ao criar novos contexts, importe os novos `models.py` no `env.py`.
+
+---
+
+## Nomenclatura
+
+- **Pastas**: `snake_case` (ex.: `order_item`).
+- **Arquivos**: `snake_case.py`.
+- **Classes**: `PascalCase` (ex.: `OrderItem`).
+- **Funções/variáveis**: `snake_case`.
+- **Ports**: `<Entity>Repository`, `UnitOfWork`.
+- **Adapters**: `SqlAlchemy<Entity>Repository`.
+- **Use cases**: `Verb<Entity>` (ex.: `CreateOrder`).
+- **Routers**: `/${context}s` (plural); **schemas** com sufixos `In`/`Out`.
+
+---
+
+## Estilo de Código
+
+- **Typing obrigatório** (mypy strict).
+- **Ruff** para lint/format.
+- Evite exceções genéricas; use erros do domínio.
+- Não usar singletons ocultos para contexto/sessão; preferir DI explícita (Depends/UoW).
+
+---
+
+## Testes
+
+- **Unidade (domínio)**: invariantes das entidades, VO e serviços de domínio.
+- **Aplicação**: use cases usando UoW fake (in-memory) quando possível.
+- **Integração (infra)**: repos/ORM + DB real (docker compose).
+- **API**: `httpx.AsyncClient` em `tests/` com a app real.
+
+Estrutura sugerida:
+```text
+tests/
+├── unit/
+│   └── domain/
+├── application/
+├── integration/
+│   └── infrastructure/
+└── api/
+```
+
+---
+
+## Processo para Novo Bounded Context (ex.: `billing`)
+
+1. **Domínio**: `domain/billing/{entities.py,repositories.py}`.
+2. **Infra**: `infrastructure/billing/{models.py,mappers.py,repository_impl.py}`.
+3. **UoW**:
+   - Atualize `domain/ports/uow.py` adicionando `billing: BillingRepository`.
+   - Em `infrastructure/uow/sqlalchemy.py`, inicialize `self.billing = SqlAlchemyBillingRepository(self._session)`.
+4. **Aplicação**: `application/billing/use_cases.py` (usar UoW).
+5. **API**:
+   - `api/schemas/billing.py` (DTOs `BillingIn/Out`).
+   - `api/routers/billing.py` (injeta UoW).
+   - Registrar em `api/router.py`.
+6. **Migrações**: criar models, autogenerate e upgrade.
+
+Checklist PR:
+- [ ] Domínio sem dependências externas
+- [ ] Use cases usando UoW
+- [ ] Adapters mapeando model ⇄ entidade
+- [ ] Rotas e schemas consistentes
+- [ ] Testes + migração
+
+---
+
+## Integrações Externas e ACL (Anti-Corruption Layer)
+
+- **Nunca** chame SDKs externos do domínio/aplicação.
+- Crie **ports** dedicadas no domínio (ex.: `PaymentGateway`), e adapters na infraestrutura (ex.: `stripe_adapter.py`).
+- Se a lib externa for “impura”, normalize em um **ACL** antes de chegar ao domínio.
+
+---
+
+## Observabilidade (futuro)
+
+- **Logging**: estruturado (JSON) via `core/logging.py`. Inclua `X-Request-ID` na borda (middleware se necessário).
+- **Métricas/Tracing**: adicionar OTel em `infrastructure/` quando requerido (não no domínio/aplicação).
+
+---
+
+## Segurança (futuro)
+
+- **Stubs** em `api/deps/security.py` (mantenha `pass`).
+- Ao integrar provedor externo (ex.: API Gateway / IdP), **não** acoplar domínio.
+- Middlewares/autorização devem viver em `api/deps/` ou adapters dedicados.
+
+---
+
+## Commits, Branching e Versionamento
+
+- **Conventional Commits** (`feat:`, `fix:`, `chore:`, `refactor:`, `test:`, `docs:` …).
+- **Branching**: trunk-based ou GitFlow leve (decisão do time).
+- **SemVer** para releases.
+- **CHANGELOG** gerado a partir dos commits convencionais (opcional).
+
+---
+
+## Anti-patterns (evitar)
+
+- Regras de negócio em **routers** ou **repository_impl**.
+- Domínio importando qualquer coisa de infra/API.
+- Retornar modelos ORM para fora da infraestrutura.
+- Misturar DTOs (schemas) com entidades de domínio.
+- Transações abertas na API sem passar por UoW.
+
+---
+
+## Anexos / Exemplos
+
+### Exemplo de Entidade e Repositório (Port)
+```python
+# domain/${context}/entities.py
+@dataclass(slots=True)
+class ${ContextCap}:
+    id: UUID
+    name: str
+    email: str
+
+# domain/${context}/repositories.py
+class ${ContextCap}Repository(Protocol):
+    async def add(self, c: ${ContextCap}) -> None: ...
+    async def get(self, id: UUID) -> ${ContextCap} | None: ...
+```
+
+### Exemplo de Adapter ORM + Mapper
+```python
+# infrastructure/${context}/models.py
+class ${ContextCap}Model(Base):
+    __tablename__ = "${context}s"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+
+# infrastructure/${context}/mappers.py
+def to_domain(m: ${ContextCap}Model) -> ${ContextCap}: ...
+```
+
+### Exemplo de Use Case com UoW
+```python
+@dataclass
+class Get${ContextCap}:
+    uow: UnitOfWork
+    async def __call__(self, id: UUID) -> ${ContextCap}:
+        async with self.uow as uow:
+            c = await uow.${context}s.get(id)
+            if not c:
+                raise NotFoundError("Registro não encontrado")
+            return c
+```
+
+---
+
+> **Dúvidas?** Abra uma issue com o prefixo `[conventions]` e descreva o caso e a camada afetada.
