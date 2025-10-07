@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -e
+export PYTHONPATH=./src
+
+echo "🔍 Executando verificações de qualidade..."
+
+ERRORS=0
+
+echo "📝 Ruff (linter)..."
+if [ "$1" = "--fix" ]; then
+    ruff check . --fix || ((ERRORS++))
+else
+    ruff check . || ((ERRORS++))
+fi
+
+echo "🎨 Ruff (formatter)..."
+if [ "$1" = "--fix" ]; then
+    ruff format . || ((ERRORS++))
+else
+    ruff format --check . || ((ERRORS++))
+fi
+
+echo "🔒 MyPy (type checking)..."
+mypy src/ || ((ERRORS++))
+
+if [ $ERRORS -eq 0 ]; then
+    echo "✅ Todas as verificações passaram!"
+    exit 0
+else
+    echo "❌ $ERRORS verificação(ões) falharam!"
+    exit 1
+fi

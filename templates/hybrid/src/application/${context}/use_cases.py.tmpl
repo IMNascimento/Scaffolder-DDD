@@ -1,0 +1,70 @@
+from dataclasses import dataclass
+from uuid import UUID
+from app.core.errors import NotFoundError, DuplicateError
+from app.domain.${context}.entities import ${ContextCap}
+from app.domain.ports.uow import UnitOfWork
+
+@dataclass
+class Create${ContextCap}:
+    uow: UnitOfWork
+    
+    async def __call__(self, name: str, email: str) -> ${ContextCap}:
+        async with self.uow as uow:
+            existing = await uow.${context}s.by_email(email)
+            if existing:
+                raise DuplicateError("Email já cadastrado")
+            
+            entity = ${ContextCap}.new(name=name, email=email)
+            await uow.${context}s.add(entity)
+            return entity
+
+@dataclass
+class Get${ContextCap}:
+    uow: UnitOfWork
+    
+    async def __call__(self, entity_id: UUID) -> ${ContextCap}:
+        async with self.uow as uow:
+            entity = await uow.${context}s.get(entity_id)
+            if not entity:
+                raise NotFoundError(f"${ContextCap} {entity_id} não encontrado")
+            return entity
+
+@dataclass
+class List${ContextCap}s:
+    uow: UnitOfWork
+    
+    async def __call__(self, limit: int = 50, offset: int = 0) -> list[${ContextCap}]:
+        async with self.uow as uow:
+            entities = await uow.${context}s.list(limit=limit, offset=offset)
+            return list(entities)
+
+@dataclass
+class Update${ContextCap}Email:
+    uow: UnitOfWork
+    
+    async def __call__(self, entity_id: UUID, new_email: str) -> ${ContextCap}:
+        async with self.uow as uow:
+            entity = await uow.${context}s.get(entity_id)
+            if not entity:
+                raise NotFoundError(f"${ContextCap} {entity_id} não encontrado")
+            
+            existing = await uow.${context}s.by_email(new_email)
+            if existing and existing.id != entity_id:
+                raise DuplicateError("Email já está em uso")
+            
+            entity.update_email(new_email)
+            await uow.${context}s.update(entity)
+            return entity
+
+@dataclass
+class Deactivate${ContextCap}:
+    uow: UnitOfWork
+    
+    async def __call__(self, entity_id: UUID) -> None:
+        async with self.uow as uow:
+            entity = await uow.${context}s.get(entity_id)
+            if not entity:
+                raise NotFoundError(f"${ContextCap} {entity_id} não encontrado")
+            
+            entity.deactivate()
+            await uow.${context}s.update(entity)

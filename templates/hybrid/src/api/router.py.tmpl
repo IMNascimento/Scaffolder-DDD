@@ -1,0 +1,6 @@
+from fastapi import APIRouter
+from app.api.routers import health, ${context}
+
+api = APIRouter()
+api.include_router(health.router)
+api.include_router(${context}.router)

@@ -1,0 +1,33 @@
+from typing import Optional
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.db import SessionMaker
+from app.domain.ports.uow import UnitOfWork
+from app.adapters.${context}.repository_impl import SqlAlchemy${ContextCap}Repository
+
+class SqlAlchemyUnitOfWork(UnitOfWork):
+    def __init__(self) -> None:
+        self._session: Optional[AsyncSession] = None
+        self.${context}s: SqlAlchemy${ContextCap}Repository
+    
+    async def __aenter__(self) -> "SqlAlchemyUnitOfWork":
+        self._session = SessionMaker()
+        self.${context}s = SqlAlchemy${ContextCap}Repository(self._session)
+        return self
+    
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        try:
+            if exc_type:
+                await self.rollback()
+            else:
+                await self.commit()
+        finally:
+            if self._session:
+                await self._session.close()
+    
+    async def commit(self) -> None:
+        if self._session:
+            await self._session.commit()
+    
+    async def rollback(self) -> None:
+        if self._session:
+            await self._session.rollback()
