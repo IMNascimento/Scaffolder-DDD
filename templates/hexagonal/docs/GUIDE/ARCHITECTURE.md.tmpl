@@ -1,0 +1,40 @@
+# Arquitetura Hexagonal (Ports and Adapters)
+
+Isolamento máximo entre core e infraestrutura.
+
+## Estrutura
+```
+app/
+├── core/
+│   ├── domain/      # Entidades
+│   └── ports/       # Interfaces
+│       ├── input/   # Use cases
+│       └── output/  # Repositories
+├── adapters/
+│   ├── input/       # REST, GraphQL
+│   └── output/      # Database, APIs
+```
+
+## Exemplo
+
+### Port (Interface)
+```python
+# app/core/ports/input/user_service_port.py
+class UserServicePort(ABC):
+    @abstractmethod
+    async def create_user(self, email: str, name: str) -> User:
+        pass
+```
+
+### Adapter
+```python
+# app/adapters/input/rest/user_controller.py
+@router.post("/users")
+async def create_user(
+    data: UserCreate,
+    service: UserServicePort = Depends(get_service)
+):
+    return await service.create_user(data.email, data.name)
+```
+
+Core nunca importa adapters!

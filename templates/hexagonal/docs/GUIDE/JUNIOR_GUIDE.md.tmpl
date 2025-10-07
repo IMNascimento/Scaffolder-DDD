@@ -1,0 +1,67 @@
+# Guia para Desenvolvedores Júnior
+
+## Bem-vindo ao Time! 🚀
+
+### Setup do Ambiente
+
+```bash
+# Clone e configure
+git clone <repository-url>
+cd <project-name>
+
+# Ambiente virtual
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+venv\Scripts\activate   # Windows
+
+# Instale dependências
+pip install -r requirements.txt
+pip install -r requirements-dev.txt
+```
+
+### Fluxo de Trabalho Diário
+
+1. **Antes de programar**
+```bash
+git checkout main
+git pull origin main
+git checkout -b feature/sua-feature
+pytest  # Certifique-se que tudo passa
+```
+
+2. **Durante desenvolvimento**
+- Faça commits pequenos e frequentes
+- Escreva testes para seu código
+- Use type hints em tudo
+
+3. **Antes de enviar**
+```bash
+ruff check . --fix
+ruff format .
+mypy .
+pytest
+git push origin feature/sua-feature
+```
+
+### Pedir Ajuda é Normal! 🤝
+
+**Quando pedir ajuda:**
+- Travado há mais de 30 minutos
+- Não entende um conceito
+- Não sabe qual abordagem tomar
+
+**Como pedir:**
+1. Tente resolver sozinho primeiro
+2. Explique claramente o problema
+3. Mostre o código e o erro
+
+### Checklist para Pull Requests
+
+- [ ] Código segue convenções
+- [ ] Todos os testes passam
+- [ ] Adicionei testes novos
+- [ ] Ruff e mypy passam
+- [ ] Documentação atualizada
+- [ ] Commits descritivos
+
+Boa sorte e bom código! 💪

@@ -1,0 +1,21 @@
+# Estrutura DDD
+
+```
+app/
+├── domain/
+│   ├── entities/
+│   ├── value_objects/
+│   ├── repositories/  # Interfaces
+│   └── services/
+├── application/
+│   ├── use_cases/
+│   └── dtos/
+├── infrastructure/
+│   ├── persistence/
+│   └── external_services/
+└── presentation/
+    ├── api/
+    └── schemas/
+```
+
+**Regra:** Domain não depende de nada externo.

@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -e
+export PYTHONPATH=./src
+
+echo "🧪 Executando testes..."
+
+CMD="pytest"
+
+if [ "$1" = "--verbose" ] || [ "$1" = "-v" ]; then
+    CMD="$CMD -vv"
+fi
+
+if [ "$1" != "--no-cov" ]; then
+    CMD="$CMD --cov=app --cov-report=term-missing --cov-report=html"
+fi
+
+$CMD
+
+if [ $? -eq 0 ]; then
+    echo "✅ Todos os testes passaram!"
+else
+    echo "❌ Alguns testes falharam!"
+    exit 1
+fi

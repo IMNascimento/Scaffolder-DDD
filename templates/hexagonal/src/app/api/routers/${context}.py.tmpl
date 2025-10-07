@@ -1,0 +1,78 @@
+from typing import Annotated
+from uuid import UUID
+from fastapi import APIRouter, Depends, status, Query, HTTPException
+from ${module_name}.api.schemas.${context} import ${ContextCap}In, ${ContextCap}Update, ${ContextCap}Out
+from ${module_name}.api.deps.uow import uow_dep
+from ${module_name}.application.${context}.use_cases import (
+    Create${ContextCap},
+    Get${ContextCap},
+    List${ContextCap}s,
+    Update${ContextCap}Email,
+    Deactivate${ContextCap}
+)
+from ${module_name}.domain.ports.uow import UnitOfWork
+from ${module_name}.core.errors import NotFoundError, DuplicateError
+
+router = APIRouter(prefix="/${context}s", tags=["${context}s"])
+
+@router.post("/", status_code=status.HTTP_201_CREATED, response_model=${ContextCap}Out)
+async def create_${context}(
+    payload: ${ContextCap}In,
+    uow: Annotated[UnitOfWork, Depends(uow_dep)]
+) -> ${ContextCap}Out:
+    use_case = Create${ContextCap}(uow)
+    try:
+        entity = await use_case(name=payload.name, email=payload.email)
+        return ${ContextCap}Out.from_entity(entity)
+    except DuplicateError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+@router.get("/{entity_id}", response_model=${ContextCap}Out)
+async def get_${context}(
+    entity_id: UUID,
+    uow: Annotated[UnitOfWork, Depends(uow_dep)]
+) -> ${ContextCap}Out:
+    use_case = Get${ContextCap}(uow)
+    try:
+        entity = await use_case(entity_id)
+        return ${ContextCap}Out.from_entity(entity)
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+@router.get("/", response_model=list[${ContextCap}Out])
+async def list_${context}s(
+    uow: Annotated[UnitOfWork, Depends(uow_dep)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0
+) -> list[${ContextCap}Out]:
+    use_case = List${ContextCap}s(uow)
+    entities = await use_case(limit=limit, offset=offset)
+    return [${ContextCap}Out.from_entity(e) for e in entities]
+
+@router.patch("/{entity_id}/email", response_model=${ContextCap}Out)
+async def update_${context}_email(
+    entity_id: UUID,
+    payload: ${ContextCap}Update,
+    uow: Annotated[UnitOfWork, Depends(uow_dep)]
+) -> ${ContextCap}Out:
+    use_case = Update${ContextCap}Email(uow)
+    try:
+        entity = await use_case(entity_id, payload.email)
+        return ${ContextCap}Out.from_entity(entity)
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except DuplicateError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+
+@router.delete("/{entity_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def deactivate_${context}(
+    entity_id: UUID,
+    uow: Annotated[UnitOfWork, Depends(uow_dep)]
+) -> None:
+    use_case = Deactivate${ContextCap}(uow)
+    try:
+        await use_case(entity_id)
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))

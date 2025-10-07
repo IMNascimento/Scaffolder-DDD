@@ -1,0 +1,24 @@
+# Estrutura Híbrida
+
+```
+app/
+├── domain/                    # DDD Core
+│   ├── entities/
+│   ├── value_objects/
+│   └── repositories/          # Interfaces
+│
+├── application/               # Use Cases
+│   └── usecases/
+│
+└── adapters/                  # Hexagonal
+    ├── input/
+    │   └── rest/
+    └── output/
+        └── persistence/
+            ├── orm/           # SQLAlchemy models
+            └── repositories/  # Implementations
+```
+
+**Fluxo:** REST → UseCase → Domain → Repository Interface → Repository Impl → ORM → DB
+
+**Regra de Ouro:** Domain não importa nada externo (nem FastAPI, nem SQLAlchemy)
