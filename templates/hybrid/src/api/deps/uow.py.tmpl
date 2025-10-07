@@ -1,5 +1,0 @@
-from app.domain.ports.uow import UnitOfWork
-from app.adapters.uow.sqlalchemy import SqlAlchemyUnitOfWork
-
-async def uow_dep() -> UnitOfWork:
-    yield SqlAlchemyUnitOfWork()

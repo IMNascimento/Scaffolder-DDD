@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
 """
-FastAPI Multi-Architecture Scaffolder — v3.1
+FastAPI Multi-Architecture Scaffolder — v3.4 (src layout + package=project)
 - múltiplos contexts (via --context A --context B ou --context A,B ou --contexts A,B)
 - arquitetura/ORM/DB com deps certas
 - copia templates por arquitetura/ORM + docker por banco
 - pre-commit/ruff/mypy/pytest/coverage via templates/common/**
 - patch do Alembic para TODOS os contexts (quando ORM=sqlalchemy)
+- cria src/<package>/, onde <package> = nome do projeto normalizado (ou --module)
+- força extensão .py quando templates de código vierem sem extensão
+- mantém arquivos de topo (LICENSE, CONTRIBUTING.md, etc.) na raiz do projeto
 """
 from __future__ import annotations
+
 import argparse
 import os
+import re
 import stat
 import subprocess
 import sys
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from string import Template
 from typing import Iterable, Literal
 
@@ -27,7 +32,6 @@ DbType = Literal["postgresql", "mysql"]
 
 DEFAULTS = {
     "project_name": "fastapi-service",
-    "module_name": "app",
     "api_prefix": "/api",
     "arch": "hybrid",
     "orm": "sqlalchemy",
@@ -63,6 +67,39 @@ BASE_LIBS = {
     "mysql": ["aiomysql", "pymysql"],
 }
 
+# Itens que devem continuar na raiz do repositório
+TOP_LEVEL_DIRS = {"docs", "scripts", "tests", ".github"}
+TOP_LEVEL_FILES = {
+    "Dockerfile",
+    "docker-compose.yml",
+    ".env",
+    ".env.example",
+    ".gitignore",
+    ".dockerignore",
+    "pyproject.toml",
+    "requirements.txt",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "Conventions.md",
+    "ISSUE_TEMPLATE.md",
+    "PULL_REQUEST_TEMPLATE.md",
+    "pytest.ini",
+    "requirements.bootstrap.txt",
+    ".pre-commit-config.yaml",
+}
+
+
+def normalize_package_name(name: str) -> str:
+    """Normaliza nome do pacote para um identificador Python válido."""
+    pkg = re.sub(r"[^0-9a-zA-Z_]+", "_", name.strip().lower())
+    if not pkg:
+        return "apppkg"
+    if pkg[0].isdigit():
+        pkg = f"pkg_{pkg}"
+    return pkg
+
 
 def get_db_url(db: str, project_name: str) -> str:
     if db == "postgresql":
@@ -96,33 +133,131 @@ def mark_executable_if_needed(dst: Path, project_dir: Path):
         dst.chmod(dst.stat().st_mode | stat.S_IEXEC)
 
 
+# ---------------------- helpers de renderização ----------------------
+
+_PY_SNIPPET_RE = re.compile(
+    r"(^\s*from\s+\w+)|(^\s*import\s+\w+)|(^\s*class\s+\w+)|(^\s*def\s+\w+)|dataclass|typing",
+    re.M,
+)
+
+
+def _looks_like_python(text: str) -> bool:
+    return bool(_PY_SNIPPET_RE.search(text))
+
+
+def _ensure_pkg_in_parents(dst: Path, src_root: Path):
+    """Garante __init__.py em cada diretório do pacote dentro de src_root."""
+    try:
+        src_root = src_root.resolve()
+        parent = dst.parent.resolve()
+        if src_root not in parent.parents and parent != src_root:
+            return
+        cur = parent
+        while cur != src_root.parent:
+            if src_root in cur.parents or cur == src_root:
+                initf = cur / "__init__.py"
+                if not initf.exists():
+                    initf.touch()
+            if cur == src_root:
+                break
+            cur = cur.parent
+    except Exception:
+        pass
+
+
 def render_file(src: Path, dst: Path, vars: dict) -> None:
+    """
+    Renderiza o template e aplica:
+    - fallback para imports "app." -> "<package>."
+    - força extensão .py se o destino veio sem sufixo e o conteúdo parece Python
+    - cria __init__.py ao longo do caminho dentro de src/<package>
+    """
     dst.parent.mkdir(parents=True, exist_ok=True)
     text = src.read_text(encoding="utf-8")
+
+    # Renderiza placeholders
     content = Template(text).safe_substitute(vars)
+
+    # Fallback: corrige imports "app." legados para o nome real do pacote
+    module = vars["module_name"]
+    content = re.sub(r"\bfrom\s+app\.", f"from {module}.", content)
+    content = re.sub(r"\bimport\s+app\.", f"import {module}.", content)
+
+    # Se o destino ficou sem extensão e o conteúdo parece Python, força ".py"
+    if dst.suffix == "" and _looks_like_python(content):
+        dst = dst.with_suffix(".py")
+
     dst.write_text(content, encoding="utf-8")
     mark_executable_if_needed(dst, vars["project_dir"])
 
+    # Garante __init__.py nos diretórios do pacote
+    _ensure_pkg_in_parents(dst, vars["project_dir"] / "src" / vars["package_name"])
 
-# ---------- copy_templates (com paths ABSOLUTOS) ----------
+
+# ---------------------- mapeamento de caminhos ----------------------
 
 def _apply_ctx_in_path(rel: Path, ctx: str) -> Path:
     return Path(str(rel.with_suffix("")).replace("${context}", ctx))
 
 
-def _render_for_each_context(src_abs: Path, rel_from_base: Path, dst_root: Path, contexts: list[str], base_vars: dict):
+def _remap_dst_rel_for_package(rel_from_base: Path, package_name: str) -> Path:
+    """
+    Reposiciona templates para o layout 'src/<package>/**' quando apropriado.
+    Agora detecta 'files de topo' mesmo quando o template termina com .tmpl.
+    """
+    s = str(rel_from_base).replace("\\", "/")
+
+    # 1) mapeamentos diretos 'src/app' e 'app'
+    if s.startswith("src/app/"):
+        return Path(s.replace("src/app/", f"src/{package_name}/", 1))
+    if s.startswith("app/"):
+        return Path(s.replace("app/", f"src/{package_name}/", 1))
+
+    p = PurePosixPath(s)
+    parts = p.parts
+
+    # Nome do arquivo para checar 'top-level', removendo o sufixo .tmpl
+    base_name = parts[-1] if parts else ""
+    base_name_no_tmpl = base_name[:-5] if base_name.endswith(".tmpl") else base_name
+
+    # 2) se começa por 'src/' e ainda não é 'src/<package>/', injeta package
+    if len(parts) >= 2 and parts[0] == "src" and parts[1] != package_name:
+        new_parts = ("src", package_name, *parts[1:])
+        return Path(PurePosixPath(*new_parts))
+
+    # 3) se é diretório/arquivo que deve ficar no topo do repo, respeite
+    # (agora compara com o nome sem .tmpl)
+    if parts and (parts[0] in TOP_LEVEL_DIRS or base_name_no_tmpl in TOP_LEVEL_FILES):
+        return Path(s)
+
+    # 4) caso contrário, qualquer coisa “solta” vai para 'src/<package>/...'
+    return Path(PurePosixPath("src") / package_name / p)
+
+
+def _render_for_each_context(
+    src_abs: Path,
+    rel_from_base: Path,
+    dst_root: Path,
+    contexts: list[str],
+    base_vars: dict,
+):
     rel_str = str(rel_from_base)
     has_ctx = "${context}" in rel_str
+
     if has_ctx:
         for ctx in contexts:
-            dst_rel = _apply_ctx_in_path(rel_from_base, ctx)
-            dst = dst_root / dst_rel
+            ctx_rel = _apply_ctx_in_path(rel_from_base, ctx)
+            ctx_rel = _remap_dst_rel_for_package(ctx_rel, base_vars["package_name"])
+            dst = dst_root / ctx_rel.with_suffix("")  # remove .tmpl
             vars_ctx = base_vars | {"context": ctx, "ContextCap": ctx.capitalize()}
             render_file(src_abs, dst, vars_ctx)
     else:
-        dst = dst_root / rel_from_base.with_suffix("")
+        adj_rel = _remap_dst_rel_for_package(rel_from_base, base_vars["package_name"])
+        dst = dst_root / adj_rel.with_suffix("")  # remove .tmpl
         render_file(src_abs, dst, base_vars)
 
+
+# ---------------------- cópia de templates ----------------------
 
 def copy_templates(vars: dict, docker_enabled: bool, contexts: list[str]) -> None:
     project_dir: Path = vars["project_dir"]
@@ -135,7 +270,7 @@ def copy_templates(vars: dict, docker_enabled: bool, contexts: list[str]) -> Non
     common_tpl = TPL / "common"
     if common_tpl.exists():
         for src in common_tpl.rglob("*.tmpl"):
-            rel = src.relative_to(common_tpl)  # RELATIVO ao common
+            rel = src.relative_to(common_tpl)
             _render_for_each_context(src, rel, project_dir, contexts, vars)
 
     # 2) ARCH
@@ -168,7 +303,7 @@ def copy_templates(vars: dict, docker_enabled: bool, contexts: list[str]) -> Non
             _render_for_each_context(src, rel, project_dir, contexts, vars)
 
 
-# ---------- Bootstrap / Alembic ----------
+# ---------------------- Bootstrap / Alembic ----------------------
 
 def bootstrap(project_dir: Path, vars: dict, create_venv: bool) -> None:
     if not create_venv:
@@ -197,12 +332,12 @@ def bootstrap(project_dir: Path, vars: dict, create_venv: bool) -> None:
         patch_alembic_env(project_dir, vars, contexts=vars["contexts"])
 
 
-def _models_import_path(arch: str, context: str) -> str:
+def _models_import_path(arch: str, context: str, module_name: str) -> str:
     if arch in ("ddd", "hybrid"):
-        return f"app.infrastructure.{context}"
+        return f"{module_name}.infrastructure.{context}"
     if arch == "hexagonal":
-        return f"app.adapters.outbound.{context}"
-    return "app.models"
+        return f"{module_name}.adapters.outbound.{context}"
+    return f"{module_name}.models"
 
 
 def patch_alembic_env(project_dir: Path, vars: dict, contexts: Iterable[str]) -> None:
@@ -213,16 +348,20 @@ def patch_alembic_env(project_dir: Path, vars: dict, contexts: Iterable[str]) ->
 
     content = env_py.read_text(encoding="utf-8")
 
-    import_lines = [f"from {_models_import_path(vars['arch'], ctx)} import models  # noqa: F401" for ctx in contexts]
+    module_name = vars["module_name"]
+    import_lines = [
+        f"from {_models_import_path(vars['arch'], ctx, module_name)} import models  # noqa: F401"
+        for ctx in contexts
+    ]
 
     inject = (
-        "from app.core.db import Base, engine\n"
+        f"from {module_name}.core.db import Base, engine\n"
         + "\n".join(import_lines)
         + "\n"
         + "target_metadata = Base.metadata\n"
     )
 
-    if "from app.core.db import Base, engine" not in content:
+    if f"from {module_name}.core.db import Base, engine" not in content:
         content = content.replace("from alembic import context\n", f"from alembic import context\n{inject}")
 
     content = content.replace("target_metadata = None\n", "")
@@ -230,7 +369,7 @@ def patch_alembic_env(project_dir: Path, vars: dict, contexts: Iterable[str]) ->
     env_py.write_text(content, encoding="utf-8")
 
 
-# ---------- CLI / Helpers ----------
+# ---------------------- CLI / Helpers ----------------------
 
 def _normalize_contexts(args: argparse.Namespace) -> list[str]:
     out: list[str] = []
@@ -238,26 +377,21 @@ def _normalize_contexts(args: argparse.Namespace) -> list[str]:
     def push_many(raw: str | None):
         if not raw:
             return
-        # aceita "a,b,c" e também " a , b "
         for part in raw.split(","):
             p = part.strip()
             if p:
                 out.append(p)
 
-    # --context pode repetir E também aceitar vírgula
     if isinstance(args.context, list):
         for item in args.context:
             push_many(item)
     else:
         push_many(args.context)
-
-    # --contexts também pode ser usado
     push_many(args.contexts)
 
     if not out:
         out = ["customer"]
 
-    # normaliza
     norm = [c.strip().replace(" ", "_").lower() for c in out]
     uniq: list[str] = []
     seen = set()
@@ -282,16 +416,18 @@ Exemplos:
 """,
     )
     p.add_argument("name", help="Nome do projeto/diretório")
-    p.add_argument("--module", dest="module_name", default=DEFAULTS["module_name"], help="Pacote raiz (padrão: app)")
+    p.add_argument(
+        "--module",
+        dest="module_name",
+        default=None,  # será inferido do name se não for fornecido
+        help="Pacote raiz (padrão: nome do projeto normalizado)",
+    )
     p.add_argument("--api-prefix", dest="api_prefix", default=DEFAULTS["api_prefix"], help="Prefixo da API (padrão: /api)")
-
     p.add_argument("--context", action="append", help="Bounded context (pode repetir ou usar vírgula)")
     p.add_argument("--contexts", help="Lista separada por vírgula (ex.: customer,order)")
-
     p.add_argument("--arch", choices=["ddd", "hexagonal", "mvc", "hybrid"], default=DEFAULTS["arch"], help="Arquitetura")
     p.add_argument("--orm", choices=["sqlalchemy", "peewee"], default=DEFAULTS["orm"], help="ORM")
     p.add_argument("--db", choices=["postgresql", "mysql"], default=DEFAULTS["db"], help="Banco de dados")
-
     p.add_argument("--venv", action="store_true", help="Criar .venv e instalar dependências automaticamente")
     p.add_argument("--no-docker", action="store_true", help="Não gerar arquivos Docker")
     return p.parse_args()
@@ -305,6 +441,7 @@ def print_summary(vars: dict) -> None:
     print(f"🏗️  Arquitetura: {vars['arch'].upper()}")
     print(f"💾 ORM: {vars['orm'].upper()}")
     print(f"🗄️  Database: {vars['db'].upper()}")
+    print(f"📁 Pacote: {vars['package_name']}")
     print(f"📁 Contexts: {', '.join(vars['contexts'])}")
 
     print("\n📚 Próximos passos:\n")
@@ -338,9 +475,12 @@ def main() -> None:
         print(f"❌ Erro: diretório {project_dir} não está vazio")
         sys.exit(2)
 
+    package_name = normalize_package_name(args.module_name or args.name)
+
     vars = {
         "project_name": args.name,
-        "module_name": args.module_name,
+        "module_name": package_name,  # compat
+        "package_name": package_name,
         "api_prefix": args.api_prefix,
         "arch": args.arch,
         "orm": args.orm,
@@ -352,7 +492,6 @@ def main() -> None:
         "venv_created": args.venv,
         "docker_enabled": not args.no_docker,
         "contexts": contexts,
-        # compat para templates que ainda usam ${context}
         "context": contexts[0],
         "ContextCap": contexts[0].capitalize(),
     }
@@ -361,14 +500,15 @@ def main() -> None:
     print(f"   Arquitetura: {args.arch}")
     print(f"   ORM: {args.orm}")
     print(f"   Database: {args.db}")
+    print(f"   Package: {package_name}")
     print(f"   Contexts: {', '.join(contexts)}")
 
+    # cria diretórios base
     project_dir.mkdir(parents=True, exist_ok=True)
+    (project_dir / "src" / package_name).mkdir(parents=True, exist_ok=True)
 
     copy_templates(vars, docker_enabled=vars["docker_enabled"], contexts=contexts)
-
     bootstrap(project_dir, vars, create_venv=args.venv)
-
     print_summary(vars)
 
 
