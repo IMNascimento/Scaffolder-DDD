@@ -1,0 +1,12 @@
+from __future__ import annotations
+from uuid import UUID
+from pydantic import BaseModel, EmailStr
+
+class ${ContextCap}In(BaseModel):
+    name: str
+    email: EmailStr
+
+class ${ContextCap}Out(BaseModel):
+    id: UUID
+    name: str
+    email: EmailStr
