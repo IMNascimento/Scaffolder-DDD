@@ -1,0 +1,12 @@
+from contextlib import contextmanager
+from ${module_name}.models.core  import connection_scope
+
+@contextmanager
+def unit_of_work():
+    with connection_scope() as db:
+        with db.atomic() as txn:
+            try:
+                yield
+            except Exception:
+                txn.rollback()
+                raise
