@@ -1,0 +1,36 @@
+from __future__ import annotations
+from contextlib import contextmanager
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, DeclarativeBase
+from ${module_name}.adapters.shared.settings import settings
+
+db_url = (
+    f"postgresql+psycopg2://{settings.DB_USER}:{settings.DB_PASSWORD}"
+    f"@{settings.DB_HOST}:{settings.DB_PORT or 5432}/{settings.DB_NAME}"
+)
+
+engine = create_engine(db_url, pool_size=settings.DB_POOL_MAX, pool_pre_ping=True)
+
+class Base(DeclarativeBase):
+    pass
+
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+def startup():
+    _ = engine.connect()
+    _.close()
+
+def shutdown():
+    engine.dispose()
+
+@contextmanager
+def session_scope():
+    session = SessionLocal()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()

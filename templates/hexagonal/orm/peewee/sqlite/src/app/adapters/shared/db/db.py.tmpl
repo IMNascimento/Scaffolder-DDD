@@ -1,0 +1,35 @@
+from __future__ import annotations
+from contextlib import contextmanager
+from peewee import Model, SqliteDatabase
+from ${module_name}.adapters.shared.settings import settings
+
+_db = SqliteDatabase(
+    settings.DB_NAME if settings.DB_NAME else ":memory:",
+    pragmas={
+        "journal_mode": "wal",
+        "cache_size": -64 * 1024,
+        "foreign_keys": 1,
+    },
+)
+
+class BaseModel(Model):
+    class Meta:
+        database = _db
+
+def startup():
+    if _db.is_closed():
+        _db.connect(reuse_if_open=True)
+
+def shutdown():
+    if not _db.is_closed():
+        _db.close()
+
+@contextmanager
+def connection_scope():
+    if _db.is_closed():
+        _db.connect(reuse_if_open=True)
+    try:
+        yield _db
+    finally:
+        if not _db.is_closed():
+            _db.close()
