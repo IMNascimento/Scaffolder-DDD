@@ -2,7 +2,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from ${module_name}.infrastructure.shared.settings import settings
+from ${module_name}.core.config import settings
 
 db_url = (
     f"postgresql+psycopg2://{settings.DB_USER}:{settings.DB_PASSWORD}"

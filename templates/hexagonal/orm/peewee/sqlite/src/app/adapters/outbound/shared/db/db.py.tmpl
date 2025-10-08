@@ -1,7 +1,7 @@
 from __future__ import annotations
 from contextlib import contextmanager
 from peewee import Model, SqliteDatabase
-from ${module_name}.core.config import settings
+from ${module_name}.core.config  import settings
 
 _db = SqliteDatabase(
     settings.DB_NAME if settings.DB_NAME else ":memory:",

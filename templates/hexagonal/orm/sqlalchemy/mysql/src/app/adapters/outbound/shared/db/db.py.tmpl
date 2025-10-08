@@ -2,15 +2,14 @@ from __future__ import annotations
 from contextlib import contextmanager
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from ${module_name}.core.config import settings
+from ${module_name}.core.config  import settings
 
 db_url = (
-    f"sqlite:///{settings.DB_NAME}"
-    if settings.DB_NAME not in (":memory:", None)
-    else "sqlite:///:memory:"
+    f"mysql+pymysql://{settings.DB_USER}:{settings.DB_PASSWORD}"
+    f"@{settings.DB_HOST}:{settings.DB_PORT or 3306}/{settings.DB_NAME}"
 )
 
-engine = create_engine(db_url, connect_args={"check_same_thread": False})
+engine = create_engine(db_url, pool_size=settings.DB_POOL_MAX, pool_pre_ping=True)
 
 class Base(DeclarativeBase):
     pass

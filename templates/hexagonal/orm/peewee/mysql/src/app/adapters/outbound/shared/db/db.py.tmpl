@@ -1,15 +1,17 @@
 from __future__ import annotations
 from contextlib import contextmanager
-from peewee import Model, SqliteDatabase
-from ${module_name}.core.config import settings
+from playhouse.pool import PooledMySQLDatabase
+from peewee import Model
+from ${module_name}.core.config  import settings
 
-_db = SqliteDatabase(
-    settings.DB_NAME if settings.DB_NAME else ":memory:",
-    pragmas={
-        "journal_mode": "wal",
-        "cache_size": -64 * 1024,
-        "foreign_keys": 1,
-    },
+_db = PooledMySQLDatabase(
+    settings.DB_NAME,
+    user=settings.DB_USER,
+    password=settings.DB_PASSWORD,
+    host=settings.DB_HOST,
+    port=settings.DB_PORT or 3306,
+    max_connections=settings.DB_POOL_MAX,
+    stale_timeout=settings.DB_TIMEOUT,
 )
 
 class BaseModel(Model):

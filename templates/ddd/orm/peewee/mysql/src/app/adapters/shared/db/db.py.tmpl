@@ -2,7 +2,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from playhouse.pool import PooledMySQLDatabase
 from peewee import Model
-from ${module_name}.infrastructure.shared.settings import settings
+from ${module_name}.core.config import settings
 
 _db = PooledMySQLDatabase(
     settings.DB_NAME,

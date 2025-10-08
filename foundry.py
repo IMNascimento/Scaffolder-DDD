@@ -164,64 +164,108 @@ def _ensure_pkg_in_parents(dst: Path, src_root: Path):
     except Exception:
         pass
 
-def _build_shared_uow_strings(vars: dict) -> dict:
+
+def _arch_conventions(vars: dict) -> dict:
+    """
+    Define onde ficam os artefatos por arquitetura,
+    para ser usado na montagem dos imports/paths.
+    """
     module = vars["module_name"]
-    contexts = list(dict.fromkeys(vars["contexts"]))  # ordem estável e sem duplicatas
+    arch = vars["arch"]
+
+    # onde ficam os "shared" (db/uow)
+    # hybrid/hexagonal => adapters/shared
+    # ddd/mvc         => infrastructure/shared (ajuste se seu MVC usar adapters)
+    if arch in ("hybrid", "hexagonal"):
+        shared_pkg = "adapters"
+    else:  # "ddd", "mvc"
+        shared_pkg = "infrastructure"
+
+    # base dos repositórios de implementação por contexto
+    # ajuste se seu hexagonal usar inbound/outbound diferente
+    if arch == "ddd":
+        def repo_base(c: str) -> str:
+            return f"{module}.infrastructure.{c}.repository"
+    elif arch == "hexagonal":
+        def repo_base(c: str) -> str:
+            return f"{module}.adapters.outbound.{c}.repository"
+    elif arch == "mvc":
+        def repo_base(c: str) -> str:
+            return f"{module}.infrastructure.{c}.repository"
+    else:  # "hybrid"
+        def repo_base(c: str) -> str:
+            return f"{module}.adapters.{c}.repository"
+
+    return {
+        "module": module,
+        "arch": arch,
+        "shared_pkg": shared_pkg,   # ex.: "adapters" | "infrastructure"
+        "repo_base": repo_base,     # função que devolve base de import por contexto
+    }
+
+def _build_shared_uow_strings(vars: dict) -> dict:
+    conv = _arch_conventions(vars)
+    module = conv["module"]
+    repo_base = conv["repo_base"]
+    contexts = list(dict.fromkeys(vars["contexts"]))  # ordem estável
 
     def Cap(name: str) -> str:
-        # "follow_user" -> "FollowUser"
         return "".join(part.capitalize() for part in name.split("_"))
 
-    # Imports dos ports do domínio (um por contexto)
+    def prop(name: str) -> str:
+        # plural simples: se já termina com 's', mantém
+        return name if name.endswith("s") else f"{name}s"
+
+    # Ports do domínio (sempre estável: domain.<context>.repositories)
     domain_repo_imports = "\n".join(
         f"from {module}.domain.{c}.repositories import {Cap(c)}Repository"
         for c in contexts
     )
 
-    # Imports dos adapters por ORM
+    # Implementações por ORM, usando a convenção por arquitetura para a base
     sa_adapter_repo_imports = "\n".join(
-        f"from {module}.adapters.{c}.repository.sqlalchemy_{c}_repo import SA{Cap(c)}Repository"
+        f"from {repo_base(c)}.sqlalchemy_{c}_repo import SA{Cap(c)}Repository"
         for c in contexts
     )
     pw_adapter_repo_imports = "\n".join(
-        f"from {module}.adapters.{c}.repository.peewee_{c}_repo import PW{Cap(c)}Repository"
+        f"from {repo_base(c)}.peewee_{c}_repo import PW{Cap(c)}Repository"
         for c in contexts
     )
 
-    # Propriedades tipadas na classe UoW (um atributo por contexto)
+    # Propriedades do UoW (um atributo por contexto)
     uow_properties = "".join(
-        f"    {c}s: {Cap(c)}Repository\n"
+        f"    {prop(c)}: {Cap(c)}Repository\n"
         for c in contexts
     )
 
-    # Campos de cache privados
+    # Caches
     uow_cache_fields = "".join(
-        f"        self._{c}s: {Cap(c)}Repository | None = None\n"
+        f"        self._{prop(c)}: {Cap(c)}Repository | None = None\n"
         for c in contexts
     )
 
-    # Inits dos repos no __aenter__
+    # Inits no __aenter__
     sa_uow_repo_inits = "".join(
-        f"        self._{c}s = SA{Cap(c)}Repository(self._session)\n"
+        f"        self._{prop(c)} = SA{Cap(c)}Repository(self._session)\n"
         for c in contexts
     )
     pw_uow_repo_inits = "".join(
-        f"        self._{c}s = PW{Cap(c)}Repository(self._mgr)\n"
+        f"        self._{prop(c)} = PW{Cap(c)}Repository(self._mgr)\n"
         for c in contexts
     )
 
-    # Resets dos caches no __aexit__
+    # Resets no __aexit__
     uow_cache_resets = "".join(
-        f"            self._{c}s = None\n"
+        f"            self._{prop(c)} = None\n"
         for c in contexts
     )
 
-    # Getters (properties) que garantem uso dentro do contexto
+    # Getters
     uow_properties_getters = "\n".join(
         f"    @property\n"
-        f"    def {c}s(self) -> {Cap(c)}Repository:\n"
-        f"        assert self._{c}s is not None, \"UoW fora do contexto (use `async with`)\"\n"
-        f"        return self._{c}s\n"
+        f"    def {prop(c)}(self) -> {Cap(c)}Repository:\n"
+        f"        assert self._{prop(c)} is not None, \"UoW fora do contexto (use `async with`)\"\n"
+        f"        return self._{prop(c)}\n"
         for c in contexts
     )
 
@@ -235,7 +279,10 @@ def _build_shared_uow_strings(vars: dict) -> dict:
         "pw_uow_repo_inits": pw_uow_repo_inits,
         "uow_cache_resets": uow_cache_resets,
         "uow_properties_getters": uow_properties_getters,
+        # também exporta shared_pkg para os templates
+        "shared_pkg": conv["shared_pkg"],
     }
+
 
 def _is_top_level_file(dst: Path, project_dir: Path) -> bool:
     """Retorna True se o destino estiver na raiz do projeto e for um dos TOP_LEVEL_FILES."""
@@ -644,6 +691,7 @@ def main() -> None:
         "uow_cache_fields": uowv["uow_cache_fields"],
         "uow_cache_resets": uowv["uow_cache_resets"],
         "uow_properties_getters": uowv["uow_properties_getters"],
+        "shared_pkg": uowv["shared_pkg"],
     }
     if vars["orm"] == "sqlalchemy":
         vars["adapter_repo_imports"] = uowv["sa_adapter_repo_imports"]
