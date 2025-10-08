@@ -164,6 +164,79 @@ def _ensure_pkg_in_parents(dst: Path, src_root: Path):
     except Exception:
         pass
 
+def _build_shared_uow_strings(vars: dict) -> dict:
+    module = vars["module_name"]
+    contexts = list(dict.fromkeys(vars["contexts"]))  # ordem estável e sem duplicatas
+
+    def Cap(name: str) -> str:
+        # "follow_user" -> "FollowUser"
+        return "".join(part.capitalize() for part in name.split("_"))
+
+    # Imports dos ports do domínio (um por contexto)
+    domain_repo_imports = "\n".join(
+        f"from {module}.domain.{c}.repositories import {Cap(c)}Repository"
+        for c in contexts
+    )
+
+    # Imports dos adapters por ORM
+    sa_adapter_repo_imports = "\n".join(
+        f"from {module}.adapters.{c}.repository.sqlalchemy_{c}_repo import SA{Cap(c)}Repository"
+        for c in contexts
+    )
+    pw_adapter_repo_imports = "\n".join(
+        f"from {module}.adapters.{c}.repository.peewee_{c}_repo import PW{Cap(c)}Repository"
+        for c in contexts
+    )
+
+    # Propriedades tipadas na classe UoW (um atributo por contexto)
+    uow_properties = "".join(
+        f"    {c}s: {Cap(c)}Repository\n"
+        for c in contexts
+    )
+
+    # Campos de cache privados
+    uow_cache_fields = "".join(
+        f"        self._{c}s: {Cap(c)}Repository | None = None\n"
+        for c in contexts
+    )
+
+    # Inits dos repos no __aenter__
+    sa_uow_repo_inits = "".join(
+        f"        self._{c}s = SA{Cap(c)}Repository(self._session)\n"
+        for c in contexts
+    )
+    pw_uow_repo_inits = "".join(
+        f"        self._{c}s = PW{Cap(c)}Repository(self._mgr)\n"
+        for c in contexts
+    )
+
+    # Resets dos caches no __aexit__
+    uow_cache_resets = "".join(
+        f"            self._{c}s = None\n"
+        for c in contexts
+    )
+
+    # Getters (properties) que garantem uso dentro do contexto
+    uow_properties_getters = "\n".join(
+        f"    @property\n"
+        f"    def {c}s(self) -> {Cap(c)}Repository:\n"
+        f"        assert self._{c}s is not None, \"UoW fora do contexto (use `async with`)\"\n"
+        f"        return self._{c}s\n"
+        for c in contexts
+    )
+
+    return {
+        "domain_repo_imports": domain_repo_imports,
+        "sa_adapter_repo_imports": sa_adapter_repo_imports,
+        "pw_adapter_repo_imports": pw_adapter_repo_imports,
+        "uow_properties": uow_properties,
+        "uow_cache_fields": uow_cache_fields,
+        "sa_uow_repo_inits": sa_uow_repo_inits,
+        "pw_uow_repo_inits": pw_uow_repo_inits,
+        "uow_cache_resets": uow_cache_resets,
+        "uow_properties_getters": uow_properties_getters,
+    }
+
 def _is_top_level_file(dst: Path, project_dir: Path) -> bool:
     """Retorna True se o destino estiver na raiz do projeto e for um dos TOP_LEVEL_FILES."""
     try:
@@ -563,6 +636,21 @@ def main() -> None:
         "context": contexts[0],
         "ContextCap": contexts[0].capitalize(),
     }
+
+    uowv = _build_shared_uow_strings(vars)
+    vars |= {
+        "domain_repo_imports": uowv["domain_repo_imports"],
+        "uow_properties": uowv["uow_properties"],
+        "uow_cache_fields": uowv["uow_cache_fields"],
+        "uow_cache_resets": uowv["uow_cache_resets"],
+        "uow_properties_getters": uowv["uow_properties_getters"],
+    }
+    if vars["orm"] == "sqlalchemy":
+        vars["adapter_repo_imports"] = uowv["sa_adapter_repo_imports"]
+        vars["uow_repo_inits"] = uowv["sa_uow_repo_inits"]
+    else:
+        vars["adapter_repo_imports"] = uowv["pw_adapter_repo_imports"]
+        vars["uow_repo_inits"] = uowv["pw_uow_repo_inits"]
 
     print(f"\n🚀 Gerando projeto: {args.name}")
     print(f"   Arquitetura: {args.arch}")

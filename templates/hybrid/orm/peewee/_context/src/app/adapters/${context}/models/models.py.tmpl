@@ -1,0 +1,22 @@
+from __future__ import annotations
+from uuid import uuid4
+from peewee import Model, CharField, BooleanField
+
+# BaseModel vem do combo do DB e já está bound ao database/Manager
+from ${module_name}.adapters.shared.db import BaseModel  # subclass de peewee.Model com _meta.database
+
+class ${ContextCap}Model(BaseModel):
+    class Meta:
+        table_name = "${table_name}"  # ex.: "payments"
+        indexes = (
+            (("email",), True),  # unique index em email
+        )
+
+    id = CharField(primary_key=True, default=lambda: str(uuid4()), max_length=36)
+    name = CharField(null=False, max_length=200)
+    email = CharField(null=False, max_length=255, unique=True)
+    is_active = BooleanField(default=True)
+    
+    def __repr__(self) -> str:
+        return f"<${ContextCap}Model id={self.id} email={self.email}>"
+
