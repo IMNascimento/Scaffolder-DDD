@@ -164,12 +164,68 @@ def _ensure_pkg_in_parents(dst: Path, src_root: Path):
     except Exception:
         pass
 
+def _is_top_level_file(dst: Path, project_dir: Path) -> bool:
+    """Retorna True se o destino estiver na raiz do projeto e for um dos TOP_LEVEL_FILES."""
+    try:
+        rel = PurePosixPath(dst.resolve().relative_to(project_dir.resolve()).as_posix())
+    except Exception:
+        return False
+    name = rel.name  # já sem .tmpl
+    return rel.parent == PurePosixPath(".") and name in TOP_LEVEL_FILES
 
+def _walk_and_render(base_dir: Path, dst_root: Path, contexts: list[str], vars: dict) -> None:
+    """
+    Percorre base_dir e renderiza todos os *.tmpl respeitando:
+      - substituição de ${context} (duplicação)
+      - remapeamento para src/<package>/...
+      - render_file(...)
+    """
+    if not base_dir.exists():
+        return
+    for src in base_dir.rglob("*.tmpl"):
+        rel = src.relative_to(base_dir)
+        _render_for_each_context(src, rel, dst_root, contexts, vars)
+
+
+def _emit_arch_neutral(arch_root: Path, dst_root: Path, contexts: list[str], vars: dict) -> None:
+    """
+    Copia TUDO da arquitetura que NÃO esteja dentro de 'orm/'.
+    Ex.: templates/hybrid/src/app/**, templates/hybrid/docs/**, etc.
+    """
+    if not arch_root.exists():
+        return
+    for src in arch_root.rglob("*.tmpl"):
+        rel = src.relative_to(arch_root)
+        parts = rel.parts
+        if parts and parts[0] == "orm":
+            continue  # pula conteúdo específico de ORM
+        _render_for_each_context(src, rel, dst_root, contexts, vars)
+
+
+def _emit_arch_combo(arch_root: Path, orm: str, db: str, dst_root: Path, contexts: list[str], vars: dict) -> None:
+    """
+    Copia SOMENTE o combo selecionado dentro da arquitetura:
+      - orm/<orm>/_common/**        (ex.: settings.py)
+      - orm/<orm>/_context/**       (ex.: models/repository por contexto)
+      - orm/<orm>/<db>/**           (ex.: db.py/uow.py/main.py do combo)
+    """
+    base = arch_root / "orm" / orm
+
+    # Parte comum do ORM
+    _walk_and_render(base / "_common", dst_root, contexts, vars)
+
+    # Arquivos por contexto do ORM
+    _walk_and_render(base / "_context", dst_root, contexts, vars)
+
+    # Combo ORM×DB
+    _walk_and_render(base / db, dst_root, contexts, vars)
+    
 def render_file(src: Path, dst: Path, vars: dict) -> None:
     """
     Renderiza o template e aplica:
     - fallback para imports "app." -> "<package>."
-    - força extensão .py se o destino veio sem sufixo e o conteúdo parece Python
+    - força extensão .py somente para arquivos dentro de src/<package> que pareçam Python
+    - NUNCA força .py em arquivos de topo (LICENSE, README, etc.)
     - cria __init__.py ao longo do caminho dentro de src/<package>
     """
     dst.parent.mkdir(parents=True, exist_ok=True)
@@ -183,15 +239,37 @@ def render_file(src: Path, dst: Path, vars: dict) -> None:
     content = re.sub(r"\bfrom\s+app\.", f"from {module}.", content)
     content = re.sub(r"\bimport\s+app\.", f"import {module}.", content)
 
-    # Se o destino ficou sem extensão e o conteúdo parece Python, força ".py"
+    # Decide se deve forçar ".py"
+    force_py = False
     if dst.suffix == "" and _looks_like_python(content):
+        # 1) nunca para arquivos de topo (LICENSE, README, etc.)
+        if not _is_top_level_file(dst, vars["project_dir"]):
+            # 2) apenas se o destino estiver dentro de src/<package>/**
+            try:
+                rel = PurePosixPath(
+                    dst.resolve().relative_to(vars["project_dir"].resolve()).as_posix()
+                )
+            except Exception:
+                rel = PurePosixPath(dst.as_posix())
+
+            parts = rel.parts
+            in_src_pkg = (
+                len(parts) >= 3
+                and parts[0] == "src"
+                and parts[1] == vars["package_name"]
+            )
+            if in_src_pkg:
+                force_py = True
+
+    if force_py:
         dst = dst.with_suffix(".py")
 
     dst.write_text(content, encoding="utf-8")
     mark_executable_if_needed(dst, vars["project_dir"])
 
-    # Garante __init__.py nos diretórios do pacote
+    # Garante __init__.py apenas dentro de src/<package>
     _ensure_pkg_in_parents(dst, vars["project_dir"] / "src" / vars["package_name"])
+
 
 
 # ---------------------- mapeamento de caminhos ----------------------
@@ -262,45 +340,35 @@ def _render_for_each_context(
 def copy_templates(vars: dict, docker_enabled: bool, contexts: list[str]) -> None:
     project_dir: Path = vars["project_dir"]
     arch: str = vars["arch"]
+    orm: str = vars["orm"]
     db: str = vars["db"]
 
     print("\n📁 Copiando templates...")
 
-    # 1) COMMON
+    # 1) COMMON (sempre)
     common_tpl = TPL / "common"
-    if common_tpl.exists():
-        for src in common_tpl.rglob("*.tmpl"):
-            rel = src.relative_to(common_tpl)
-            _render_for_each_context(src, rel, project_dir, contexts, vars)
+    _walk_and_render(common_tpl, project_dir, contexts, vars)
 
-    # 2) ARCH
-    arch_tpl = TPL / arch
-    if arch_tpl.exists():
-        for src in arch_tpl.rglob("*.tmpl"):
-            if src.name in {"docker-compose.yml.tmpl", "Dockerfile.tmpl"}:
-                continue
-            rel = src.relative_to(arch_tpl)
-            _render_for_each_context(src, rel, project_dir, contexts, vars)
+    # 2) ARQUITETURA (somente a escolhida)
+    arch_root = TPL / arch
 
-    # 3) DOCKER (condicional)
+    # 2.1) NEUTRO da arquitetura (qualquer coisa FORA de 'orm/')
+    _emit_arch_neutral(arch_root, project_dir, contexts, vars)
+
+    # 2.2) COMBO (ORM × DB) da arquitetura
+    _emit_arch_combo(arch_root, orm, db, project_dir, contexts, vars)
+
+    # 3) DOCKER (condicional por DB)
     if docker_enabled:
         docker_base = TPL / "docker"
         compose_src = docker_base / db / "docker-compose.yml.tmpl"
         if compose_src.exists():
             render_file(compose_src, project_dir / "docker-compose.yml", vars)
             print(f"   ✓ docker-compose.yml ({db})")
-
         dockerfile_src = docker_base / "Dockerfile.tmpl"
         if dockerfile_src.exists():
             render_file(dockerfile_src, project_dir / "Dockerfile", vars)
             print("   ✓ Dockerfile")
-
-    # 4) ORM extra (se existir pasta específica)
-    orm_tpl = TPL / "orm" / vars["orm"]
-    if orm_tpl.exists():
-        for src in orm_tpl.rglob("*.tmpl"):
-            rel = src.relative_to(orm_tpl)
-            _render_for_each_context(src, rel, project_dir, contexts, vars)
 
 
 # ---------------------- Bootstrap / Alembic ----------------------

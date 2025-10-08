@@ -1,6 +1,7 @@
 from sqlalchemy import String, Boolean
-from sqlalchemy.orm import Mapped, mapped_column
-from ${module_name}.core.db import Base
+#from sqlalchemy.orm import Mapped, mapped_column  se for sqlalchemy
+# from peewee import AutoField, CharField, DateTimeField se for peewee
+from ${module_name}.adapters.shared.db import BaseModel
 from uuid import uuid4
 
 class ${ContextCap}Model(Base):
