@@ -1,0 +1,9 @@
+from __future__ import annotations
+from .core.logging import setup_logging
+from .core.config import settings
+from .bootstrap import build_app
+
+
+def app():  # uvicorn app.main:app --factory
+    setup_logging(settings.LOG_LEVEL)
+    return build_app()
