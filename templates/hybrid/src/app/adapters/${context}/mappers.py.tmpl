@@ -1,0 +1,24 @@
+from uuid import UUID
+from ${module_name}.adapters.${context}.models import ${ContextCap}Model
+from ${module_name}.domain.${context}.entities import ${ContextCap}
+
+def to_domain(model: ${ContextCap}Model) -> ${ContextCap}:
+    return ${ContextCap}(
+        id=UUID(model.id),
+        name=model.name,
+        email=model.email,
+        is_active=model.is_active
+    )
+
+def to_model(entity: ${ContextCap}) -> ${ContextCap}Model:
+    return ${ContextCap}Model(
+        id=str(entity.id),
+        name=entity.name,
+        email=entity.email,
+        is_active=entity.is_active
+    )
+
+def update_model(model: ${ContextCap}Model, entity: ${ContextCap}) -> None:
+    model.name = entity.name
+    model.email = entity.email
+    model.is_active = entity.is_active

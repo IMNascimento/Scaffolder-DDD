@@ -1,0 +1,62 @@
+# Arquitetura MVC (Model-View-Controller)
+
+Padrão clássico para desenvolvimento rápido.
+
+## Estrutura
+```
+app/
+├── models/       # ORM Models
+├── views/        # Pydantic Schemas
+├── controllers/  # FastAPI Routers
+└── services/     # Lógica de negócio
+```
+
+## Exemplo Completo
+
+### Model
+```python
+# app/models/user.py
+from sqlalchemy import Column, Integer, String
+from app.database import Base
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True)
+    email = Column(String, unique=True)
+    name = Column(String)
+```
+
+### View (Schema)
+```python
+# app/views/user_schema.py
+from pydantic import BaseModel, EmailStr
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    name: str
+
+class UserResponse(BaseModel):
+    id: int
+    email: str
+    name: str
+    
+    class Config:
+        from_attributes = True
+```
+
+### Controller
+```python
+# app/controllers/user_controller.py
+from fastapi import APIRouter, Depends
+
+router = APIRouter(prefix="/users")
+
+@router.post("/", response_model=UserResponse)
+async def create_user(data: UserCreate, db = Depends(get_db)):
+    user = User(**data.dict())
+    db.add(user)
+    await db.commit()
+    return user
+```
+
+Simples e direto ao ponto!

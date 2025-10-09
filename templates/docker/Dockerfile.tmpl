@@ -1,0 +1,40 @@
+FROM python:3.12-slim AS base
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential curl libpq-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+FROM base AS builder
+COPY requirements.txt .
+RUN pip install --user --no-warn-script-location -r requirements.txt
+
+FROM base AS development
+COPY --from=builder /root/.local /root/.local
+ENV PATH=/root/.local/bin:$PATH
+COPY . .
+RUN chmod +x scripts/*.sh
+WORKDIR /app
+ENV PYTHONPATH=/app/src
+EXPOSE 8000
+CMD ["uvicorn", "--app-dir", "src", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+FROM base AS production
+RUN useradd -m -u 1000 appuser && \
+    mkdir -p /app && \
+    chown -R appuser:appuser /app
+COPY --from=builder /root/.local /home/appuser/.local
+ENV PATH=/home/appuser/.local/bin:$PATH
+COPY --chown=appuser:appuser src/ /app/src/
+COPY --chown=appuser:appuser alembic/ /app/alembic/
+COPY --chown=appuser:appuser alembic.ini /app/
+COPY --chown=appuser:appuser scripts/ /app/scripts/
+RUN chmod +x /app/scripts/*.sh
+USER appuser
+WORKDIR /app
+ENV PYTHONPATH=/app/src ENV=prod LOG_LEVEL=INFO
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health/live || exit 1
+CMD ["uvicorn", "--app-dir", "src", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

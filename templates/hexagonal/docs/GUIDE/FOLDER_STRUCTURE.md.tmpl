@@ -1,0 +1,18 @@
+# Estrutura Hexagonal
+
+```
+app/
+├── core/
+│   ├── domain/
+│   │   └── entities/
+│   └── ports/
+│       ├── input/   # Primary ports
+│       └── output/  # Secondary ports
+└── adapters/
+    ├── input/       # Primary adapters
+    │   └── rest/
+    └── output/      # Secondary adapters
+        └── persistence/
+```
+
+**Regra:** Core não conhece adapters.

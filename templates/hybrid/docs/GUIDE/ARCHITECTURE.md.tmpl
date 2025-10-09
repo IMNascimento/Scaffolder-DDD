@@ -1,0 +1,87 @@
+# Arquitetura Híbrida (DDD + Hexagonal)
+
+Combina domínio rico (DDD) com isolamento (Hexagonal).
+
+## Estrutura
+```
+app/
+├── domain/          # DDD: Entities, Value Objects
+├── application/     # DDD: Use Cases
+└── adapters/        # Hexagonal: Input/Output
+    └──  ${context}/       # REST, GraphQL, Database, External APIs
+    
+```
+
+## Exemplo Completo
+
+### Domain Entity
+```python
+# app/domain/entities/user.py
+from dataclasses import dataclass
+from app.domain.value_objects.email import Email
+
+@dataclass
+class User:
+    id: int | None
+    email: Email  # Value Object
+    name: str
+    is_active: bool = True
+    
+    def deactivate(self):
+        if not self.is_active:
+            raise ValueError("Already inactive")
+        self.is_active = False
+```
+
+### Value Object
+```python
+# app/domain/value_objects/email.py
+@dataclass(frozen=True)
+class Email:
+    value: str
+    
+    def __post_init__(self):
+        if "@" not in self.value:
+            raise ValueError("Invalid email")
+```
+
+### Repository Interface (Domain)
+```python
+# app/domain/repositories/user_repository.py
+class UserRepository(ABC):
+    @abstractmethod
+    async def save(self, user: User) -> User:
+        pass
+```
+
+### Use Case (Application)
+```python
+# app/application/usecases/create_user_usecase.py
+class CreateUserUseCase:
+    def __init__(self, repo: UserRepository):
+        self.repo = repo
+    
+    async def execute(self, email_str: str, name: str) -> User:
+        email = Email(email_str)
+        user = User(None, email, name)
+        return await self.repo.save(user)
+```
+
+### Adapter Output (Repository Implementation)
+```python
+# app/adapters/user/repositories/sqlalchemy_user_repository.py
+class SQLAlchemyUserRepository(UserRepository):
+    def __init__(self, session):
+        self.session = session
+    
+    async def save(self, user: User) -> User:
+        model = UserModel(
+            email=str(user.email),
+            name=user.name
+        )
+        self.session.add(model)
+        await self.session.commit()
+        return self._to_entity(model)
+```
+
+Melhor dos dois mundos: Domínio rico + Máxima testabilidade!

@@ -1,0 +1,35 @@
+# Estrutura Híbrida
+
+```
+app/
+├── domain/                    # DDD Core
+│   ├── ${context}/
+│   │   ├── entities.py   # Entidades
+│   │   ├── value_objects.py  # Value Objects
+│   │   └── repositories.py      # Domain Interfaces
+│   ├── shared/
+│   │   ├── policies.py   # Regras de negócio compartilhadas 
+│   │   └── repositories.py      # Domain Interfaces
+│   └── ports/          # Interfaces contratos
+│       └──  uow.py    # Unit of Work
+│
+├── application/               # Use Cases
+│    ├── ${context}/
+│    |  ├── dtos.py
+│    |  └── use_cases.py
+│    |
+│    └──shared/ # Itens compartilhados           
+
+│
+└── adapters/                  # Hexagonal
+    ├── ${context}/
+    │   ├── models/           # SQLAlchemy ou peewee models
+    │   └── repositories/  # Implementations
+    └── shared/    # itens compartilhados
+        └── db/          # Session, engine, etc.
+
+```
+
+**Fluxo:** REST → UseCase → Domain → Repository Interface → Repository Impl → ORM → DB
+
+**Regra de Ouro:** Domain não importa nada externo (nem FastAPI, nem SQLAlchemy)

@@ -1,7 +1,0 @@
-from __future__ import annotations
-from ....domain.ports.uow import UnitOfWork
-from ....infrastructure.uow.sqlalchemy import SqlAlchemyUnitOfWork
-
-async def uow_dep() -> UnitOfWork:
-    # UoW por request — sessão/tx isoladas
-    yield SqlAlchemyUnitOfWork()
