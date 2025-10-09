@@ -3,20 +3,31 @@
 ```
 app/
 ├── domain/                    # DDD Core
-│   ├── entities/
-│   ├── value_objects/
-│   └── repositories/          # Interfaces
+│   ├── ${context}/
+│   │   ├── entities.py   # Entidades
+│   │   ├── value_objects.py  # Value Objects
+│   │   └── repositories.py      # Domain Interfaces
+│   ├── shared/
+│   │   ├── policies.py   # Regras de negócio compartilhadas 
+│   │   └── repositories.py      # Domain Interfaces
+│   └── ports/          # Interfaces contratos
+│       └──  uow.py    # Unit of Work
 │
 ├── application/               # Use Cases
-│   └── usecases/
+│    ├── ${context}/
+│    |  ├── dtos.py
+│    |  └── use_cases.py
+│    |
+│    └──shared/ # Itens compartilhados           
+
 │
 └── adapters/                  # Hexagonal
-    ├── input/
-    │   └── rest/
-    └── output/
-        └── persistence/
-            ├── orm/           # SQLAlchemy models
-            └── repositories/  # Implementations
+    ├── ${context}/
+    │   ├── models/           # SQLAlchemy ou peewee models
+    │   └── repositories/  # Implementations
+    └── shared/    # itens compartilhados
+        └── db/          # Session, engine, etc.
+
 ```
 
 **Fluxo:** REST → UseCase → Domain → Repository Interface → Repository Impl → ORM → DB

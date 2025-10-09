@@ -1,0 +1,48 @@
+from __future__ import annotations
+from typing import Sequence
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ${module_name}.adapters.${context}.models import ${ContextCap}Model
+from ${module_name}.adapters.${context}.mappers import to_domain, to_model, update_model
+from ${module_name}.domain.${context}.entities import ${ContextCap}
+from ${module_name}.domain.${context}.repositories import ${ContextCap}Repository
+
+
+class SA${ContextCap}Repository(${ContextCap}Repository):
+    def __init__(self, session: AsyncSession):
+        self._session = session
+
+    async def add(self, entity: ${ContextCap}) -> None:
+        model = to_model(entity)
+        self._session.add(model)
+        await self._session.flush()
+
+    async def get(self, id: UUID) -> ${ContextCap} | None:
+        stmt = select(${ContextCap}Model).where(${ContextCap}Model.id == str(id))
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+        return to_domain(model) if model else None
+
+    async def by_email(self, email: str) -> ${ContextCap} | None:
+        stmt = select(${ContextCap}Model).where(${ContextCap}Model.email == email)
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+        return to_domain(model) if model else None
+
+    async def list(self, limit: int = 50, offset: int = 0) -> Sequence[${ContextCap}]:
+        stmt = select(${ContextCap}Model).offset(offset).limit(limit)
+        result = await self._session.execute(stmt)
+        models = result.scalars().all()
+        return [to_domain(m) for m in models]
+
+    async def update(self, entity: ${ContextCap}) -> None:
+        stmt = select(${ContextCap}Model).where(${ContextCap}Model.id == str(entity.id))
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+        if not model:
+            raise ValueError(f"${ContextCap} {entity.id} não encontrado")
+        update_model(model, entity)
+        await self._session.flush()

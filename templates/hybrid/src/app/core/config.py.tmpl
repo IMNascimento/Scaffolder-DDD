@@ -14,7 +14,19 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     LOG_LEVEL: str = "INFO"
     CORS_ORIGINS: List[str] = []
+    
     DATABASE_URL: str
     DB_ECHO: bool = False
+
+    # Conexão (o significado muda levemente entre ORMs)
+    DB_NAME: str = Field(default="app.db")
+    DB_HOST: str | None = None
+    DB_PORT: int | None = None
+    DB_USER: str | None = None
+    DB_PASSWORD: str | None = None
+
+    DB_POOL_MAX: int = 10
+    DB_TIMEOUT: int = 10  # segundos
+
 
 settings = Settings()

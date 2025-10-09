@@ -165,11 +165,187 @@ def _ensure_pkg_in_parents(dst: Path, src_root: Path):
         pass
 
 
+def _arch_conventions(vars: dict) -> dict:
+    """
+    Define onde ficam os artefatos por arquitetura,
+    para ser usado na montagem dos imports/paths.
+    """
+    module = vars["module_name"]
+    arch = vars["arch"]
+
+    # onde ficam os "shared" (db/uow)
+    # hybrid/hexagonal => adapters/shared
+    # ddd/mvc         => infrastructure/shared (ajuste se seu MVC usar adapters)
+    if arch in ("hybrid", "hexagonal"):
+        shared_pkg = "adapters"
+    else:  # "ddd", "mvc"
+        shared_pkg = "infrastructure"
+
+    # base dos repositórios de implementação por contexto
+    # ajuste se seu hexagonal usar inbound/outbound diferente
+    if arch == "ddd":
+        def repo_base(c: str) -> str:
+            return f"{module}.infrastructure.{c}.repository"
+    elif arch == "hexagonal":
+        def repo_base(c: str) -> str:
+            return f"{module}.adapters.outbound.{c}.repository"
+    elif arch == "mvc":
+        def repo_base(c: str) -> str:
+            return f"{module}.infrastructure.{c}.repository"
+    else:  # "hybrid"
+        def repo_base(c: str) -> str:
+            return f"{module}.adapters.{c}.repository"
+
+    return {
+        "module": module,
+        "arch": arch,
+        "shared_pkg": shared_pkg,   # ex.: "adapters" | "infrastructure"
+        "repo_base": repo_base,     # função que devolve base de import por contexto
+    }
+
+def _build_shared_uow_strings(vars: dict) -> dict:
+    conv = _arch_conventions(vars)
+    module = conv["module"]
+    repo_base = conv["repo_base"]
+    contexts = list(dict.fromkeys(vars["contexts"]))  # ordem estável
+
+    def Cap(name: str) -> str:
+        return "".join(part.capitalize() for part in name.split("_"))
+
+    def prop(name: str) -> str:
+        # plural simples: se já termina com 's', mantém
+        return name if name.endswith("s") else f"{name}s"
+
+    # Ports do domínio (sempre estável: domain.<context>.repositories)
+    domain_repo_imports = "\n".join(
+        f"from {module}.domain.{c}.repositories import {Cap(c)}Repository"
+        for c in contexts
+    )
+
+    # Implementações por ORM, usando a convenção por arquitetura para a base
+    sa_adapter_repo_imports = "\n".join(
+        f"from {repo_base(c)}.sqlalchemy_{c}_repo import SA{Cap(c)}Repository"
+        for c in contexts
+    )
+    pw_adapter_repo_imports = "\n".join(
+        f"from {repo_base(c)}.peewee_{c}_repo import PW{Cap(c)}Repository"
+        for c in contexts
+    )
+
+    # Propriedades do UoW (um atributo por contexto)
+    uow_properties = "".join(
+        f"    {prop(c)}: {Cap(c)}Repository\n"
+        for c in contexts
+    )
+
+    # Caches
+    uow_cache_fields = "".join(
+        f"        self._{prop(c)}: {Cap(c)}Repository | None = None\n"
+        for c in contexts
+    )
+
+    # Inits no __aenter__
+    sa_uow_repo_inits = "".join(
+        f"        self._{prop(c)} = SA{Cap(c)}Repository(self._session)\n"
+        for c in contexts
+    )
+    pw_uow_repo_inits = "".join(
+        f"        self._{prop(c)} = PW{Cap(c)}Repository(self._mgr)\n"
+        for c in contexts
+    )
+
+    # Resets no __aexit__
+    uow_cache_resets = "".join(
+        f"            self._{prop(c)} = None\n"
+        for c in contexts
+    )
+
+    # Getters
+    uow_properties_getters = "\n".join(
+        f"    @property\n"
+        f"    def {prop(c)}(self) -> {Cap(c)}Repository:\n"
+        f"        assert self._{prop(c)} is not None, \"UoW fora do contexto (use `async with`)\"\n"
+        f"        return self._{prop(c)}\n"
+        for c in contexts
+    )
+
+    return {
+        "domain_repo_imports": domain_repo_imports,
+        "sa_adapter_repo_imports": sa_adapter_repo_imports,
+        "pw_adapter_repo_imports": pw_adapter_repo_imports,
+        "uow_properties": uow_properties,
+        "uow_cache_fields": uow_cache_fields,
+        "sa_uow_repo_inits": sa_uow_repo_inits,
+        "pw_uow_repo_inits": pw_uow_repo_inits,
+        "uow_cache_resets": uow_cache_resets,
+        "uow_properties_getters": uow_properties_getters,
+        # também exporta shared_pkg para os templates
+        "shared_pkg": conv["shared_pkg"],
+    }
+
+
+def _is_top_level_file(dst: Path, project_dir: Path) -> bool:
+    """Retorna True se o destino estiver na raiz do projeto e for um dos TOP_LEVEL_FILES."""
+    try:
+        rel = PurePosixPath(dst.resolve().relative_to(project_dir.resolve()).as_posix())
+    except Exception:
+        return False
+    name = rel.name  # já sem .tmpl
+    return rel.parent == PurePosixPath(".") and name in TOP_LEVEL_FILES
+
+def _walk_and_render(base_dir: Path, dst_root: Path, contexts: list[str], vars: dict) -> None:
+    """
+    Percorre base_dir e renderiza todos os *.tmpl respeitando:
+      - substituição de ${context} (duplicação)
+      - remapeamento para src/<package>/...
+      - render_file(...)
+    """
+    if not base_dir.exists():
+        return
+    for src in base_dir.rglob("*.tmpl"):
+        rel = src.relative_to(base_dir)
+        _render_for_each_context(src, rel, dst_root, contexts, vars)
+
+
+def _emit_arch_neutral(arch_root: Path, dst_root: Path, contexts: list[str], vars: dict) -> None:
+    """
+    Copia TUDO da arquitetura que NÃO esteja dentro de 'orm/'.
+    Ex.: templates/hybrid/src/app/**, templates/hybrid/docs/**, etc.
+    """
+    if not arch_root.exists():
+        return
+    for src in arch_root.rglob("*.tmpl"):
+        rel = src.relative_to(arch_root)
+        parts = rel.parts
+        if parts and parts[0] == "orm":
+            continue  # pula conteúdo específico de ORM
+        _render_for_each_context(src, rel, dst_root, contexts, vars)
+
+
+def _emit_arch_combo(arch_root: Path, orm: str, db: str, dst_root: Path, contexts: list[str], vars: dict) -> None:
+    """
+    Copia SOMENTE o combo selecionado dentro da arquitetura:
+      - orm/<orm>/_common/**        (ex.: settings.py)
+      - orm/<orm>/_context/**       (ex.: models/repository por contexto)
+      - orm/<orm>/<db>/**           (ex.: db.py/uow.py/main.py do combo)
+    """
+    base = arch_root / "orm" / orm
+
+    # Parte comum do ORM
+    _walk_and_render(base / "_common", dst_root, contexts, vars)
+
+    # Arquivos por contexto do ORM
+    _walk_and_render(base / "_context", dst_root, contexts, vars)
+
+    # Combo ORM×DB
+    _walk_and_render(base / db, dst_root, contexts, vars)
+    
 def render_file(src: Path, dst: Path, vars: dict) -> None:
     """
     Renderiza o template e aplica:
     - fallback para imports "app." -> "<package>."
-    - força extensão .py se o destino veio sem sufixo e o conteúdo parece Python
+    - força extensão .py somente para arquivos dentro de src/<package> que pareçam Python
+    - NUNCA força .py em arquivos de topo (LICENSE, README, etc.)
     - cria __init__.py ao longo do caminho dentro de src/<package>
     """
     dst.parent.mkdir(parents=True, exist_ok=True)
@@ -183,15 +359,37 @@ def render_file(src: Path, dst: Path, vars: dict) -> None:
     content = re.sub(r"\bfrom\s+app\.", f"from {module}.", content)
     content = re.sub(r"\bimport\s+app\.", f"import {module}.", content)
 
-    # Se o destino ficou sem extensão e o conteúdo parece Python, força ".py"
+    # Decide se deve forçar ".py"
+    force_py = False
     if dst.suffix == "" and _looks_like_python(content):
+        # 1) nunca para arquivos de topo (LICENSE, README, etc.)
+        if not _is_top_level_file(dst, vars["project_dir"]):
+            # 2) apenas se o destino estiver dentro de src/<package>/**
+            try:
+                rel = PurePosixPath(
+                    dst.resolve().relative_to(vars["project_dir"].resolve()).as_posix()
+                )
+            except Exception:
+                rel = PurePosixPath(dst.as_posix())
+
+            parts = rel.parts
+            in_src_pkg = (
+                len(parts) >= 3
+                and parts[0] == "src"
+                and parts[1] == vars["package_name"]
+            )
+            if in_src_pkg:
+                force_py = True
+
+    if force_py:
         dst = dst.with_suffix(".py")
 
     dst.write_text(content, encoding="utf-8")
     mark_executable_if_needed(dst, vars["project_dir"])
 
-    # Garante __init__.py nos diretórios do pacote
+    # Garante __init__.py apenas dentro de src/<package>
     _ensure_pkg_in_parents(dst, vars["project_dir"] / "src" / vars["package_name"])
+
 
 
 # ---------------------- mapeamento de caminhos ----------------------
@@ -262,45 +460,35 @@ def _render_for_each_context(
 def copy_templates(vars: dict, docker_enabled: bool, contexts: list[str]) -> None:
     project_dir: Path = vars["project_dir"]
     arch: str = vars["arch"]
+    orm: str = vars["orm"]
     db: str = vars["db"]
 
     print("\n📁 Copiando templates...")
 
-    # 1) COMMON
+    # 1) COMMON (sempre)
     common_tpl = TPL / "common"
-    if common_tpl.exists():
-        for src in common_tpl.rglob("*.tmpl"):
-            rel = src.relative_to(common_tpl)
-            _render_for_each_context(src, rel, project_dir, contexts, vars)
+    _walk_and_render(common_tpl, project_dir, contexts, vars)
 
-    # 2) ARCH
-    arch_tpl = TPL / arch
-    if arch_tpl.exists():
-        for src in arch_tpl.rglob("*.tmpl"):
-            if src.name in {"docker-compose.yml.tmpl", "Dockerfile.tmpl"}:
-                continue
-            rel = src.relative_to(arch_tpl)
-            _render_for_each_context(src, rel, project_dir, contexts, vars)
+    # 2) ARQUITETURA (somente a escolhida)
+    arch_root = TPL / arch
 
-    # 3) DOCKER (condicional)
+    # 2.1) NEUTRO da arquitetura (qualquer coisa FORA de 'orm/')
+    _emit_arch_neutral(arch_root, project_dir, contexts, vars)
+
+    # 2.2) COMBO (ORM × DB) da arquitetura
+    _emit_arch_combo(arch_root, orm, db, project_dir, contexts, vars)
+
+    # 3) DOCKER (condicional por DB)
     if docker_enabled:
         docker_base = TPL / "docker"
         compose_src = docker_base / db / "docker-compose.yml.tmpl"
         if compose_src.exists():
             render_file(compose_src, project_dir / "docker-compose.yml", vars)
             print(f"   ✓ docker-compose.yml ({db})")
-
         dockerfile_src = docker_base / "Dockerfile.tmpl"
         if dockerfile_src.exists():
             render_file(dockerfile_src, project_dir / "Dockerfile", vars)
             print("   ✓ Dockerfile")
-
-    # 4) ORM extra (se existir pasta específica)
-    orm_tpl = TPL / "orm" / vars["orm"]
-    if orm_tpl.exists():
-        for src in orm_tpl.rglob("*.tmpl"):
-            rel = src.relative_to(orm_tpl)
-            _render_for_each_context(src, rel, project_dir, contexts, vars)
 
 
 # ---------------------- Bootstrap / Alembic ----------------------
@@ -495,6 +683,22 @@ def main() -> None:
         "context": contexts[0],
         "ContextCap": contexts[0].capitalize(),
     }
+
+    uowv = _build_shared_uow_strings(vars)
+    vars |= {
+        "domain_repo_imports": uowv["domain_repo_imports"],
+        "uow_properties": uowv["uow_properties"],
+        "uow_cache_fields": uowv["uow_cache_fields"],
+        "uow_cache_resets": uowv["uow_cache_resets"],
+        "uow_properties_getters": uowv["uow_properties_getters"],
+        "shared_pkg": uowv["shared_pkg"],
+    }
+    if vars["orm"] == "sqlalchemy":
+        vars["adapter_repo_imports"] = uowv["sa_adapter_repo_imports"]
+        vars["uow_repo_inits"] = uowv["sa_uow_repo_inits"]
+    else:
+        vars["adapter_repo_imports"] = uowv["pw_adapter_repo_imports"]
+        vars["uow_repo_inits"] = uowv["pw_uow_repo_inits"]
 
     print(f"\n🚀 Gerando projeto: {args.name}")
     print(f"   Arquitetura: {args.arch}")

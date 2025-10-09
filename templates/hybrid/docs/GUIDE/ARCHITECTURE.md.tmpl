@@ -8,11 +8,8 @@ app/
 ├── domain/          # DDD: Entities, Value Objects
 ├── application/     # DDD: Use Cases
 └── adapters/        # Hexagonal: Input/Output
-    ├── input/       # REST, GraphQL
-    └── output/      # Database, External APIs
-        └── persistence/
-            ├── orm/          # Models ORM
-            └── repositories/ # Implementations
+    └──  ${context}/       # REST, GraphQL, Database, External APIs
+    
 ```
 
 ## Exemplo Completo
@@ -72,7 +69,7 @@ class CreateUserUseCase:
 
 ### Adapter Output (Repository Implementation)
 ```python
-# app/adapters/output/persistence/repositories/sqlalchemy_user_repository.py
+# app/adapters/user/repositories/sqlalchemy_user_repository.py
 class SQLAlchemyUserRepository(UserRepository):
     def __init__(self, session):
         self.session = session
@@ -85,18 +82,6 @@ class SQLAlchemyUserRepository(UserRepository):
         self.session.add(model)
         await self.session.commit()
         return self._to_entity(model)
-```
-
-### Adapter Input (Controller)
-```python
-# app/adapters/input/rest/user_controller.py
-@router.post("/users")
-async def create_user(
-    data: CreateUserRequest,
-    usecase: CreateUserUseCase = Depends(get_usecase)
-):
-    user = await usecase.execute(data.email, data.name)
-    return UserResponse.from_entity(user)
 ```
 
 Melhor dos dois mundos: Domínio rico + Máxima testabilidade!
