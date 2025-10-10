@@ -1,0 +1,27 @@
+from __future__ import annotations
+from uuid import UUID
+from fastapi import APIRouter, status, Depends
+from ....domain.ports.uow import UnitOfWork
+from ....application.${context}.use_cases import Create${ContextCap}, Get${ContextCap}, List${ContextCap}s
+from ..schemas.${context} import ${ContextCap}In, ${ContextCap}Out
+from ..deps.uow import uow_dep
+
+router = APIRouter(prefix="/${context}s", tags=["${context}s"])
+
+@router.post("/", status_code=status.HTTP_201_CREATED, response_model=${ContextCap}Out)
+async def create_${context}(payload: ${ContextCap}In, uow: UnitOfWork = Depends(uow_dep)):
+    usecase = Create${ContextCap}(uow)
+    c = await usecase(name=payload.name, email=str(payload.email))
+    return ${ContextCap}Out(id=c.id, name=c.name, email=c.email)
+
+@router.get("/{id}", response_model=${ContextCap}Out)
+async def get_${context}(id: UUID, uow: UnitOfWork = Depends(uow_dep)):
+    usecase = Get${ContextCap}(uow)
+    c = await usecase(id=id)
+    return ${ContextCap}Out(id=c.id, name=c.name, email=c.email)
+
+@router.get("/", response_model=list[${ContextCap}Out])
+async def list_${context}s(limit: int = 50, offset: int = 0, uow: UnitOfWork = Depends(uow_dep)):
+    usecase = List${ContextCap}s(uow)
+    data = await usecase(limit=limit, offset=offset)
+    return [${ContextCap}Out(id=c.id, name=c.name, email=c.email) for c in data]

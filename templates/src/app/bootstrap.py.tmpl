@@ -1,0 +1,14 @@
+from __future__ import annotations
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from .core.config import settings
+from .core.errors import DomainError, problem_handler
+from .api.router import api
+
+
+def build_app() -> FastAPI:
+    app = FastAPI(title=settings.APP_NAME, version=settings.VERSION)
+    app.add_middleware(CORSMiddleware, allow_origins=settings.CORS_ORIGINS or ["*" if settings.ENV=="dev" else ""], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+    app.add_exception_handler(DomainError, problem_handler)  # type: ignore[arg-type]
+    app.include_router(api, prefix=settings.API_PREFIX)
+    return app
