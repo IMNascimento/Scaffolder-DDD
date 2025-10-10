@@ -63,8 +63,8 @@ BASE_LIBS = {
     ],
     "sqlalchemy": ["sqlalchemy", "alembic"],
     "peewee": ["peewee", "peewee-async"],
-    "postgresql": ["asyncpg", "psycopg2-binary"],
-    "mysql": ["aiomysql", "pymysql"],
+    "postgresql": [],
+    "mysql": [],
 }
 
 # Itens que devem continuar na raiz do repositório
@@ -122,7 +122,23 @@ def venv_paths(project_dir: Path):
 def get_dependencies(orm: str, db: str) -> list[str]:
     deps = BASE_LIBS["common"].copy()
     deps.extend(BASE_LIBS[orm])
-    deps.extend(BASE_LIBS[db])
+
+    # Drivers por banco, ajustando para cada ORM
+    if db == "postgresql":
+        # SQLAlchemy assíncrono usa asyncpg; Peewee (peewee-async) usa aiopg
+        deps.append("psycopg2-binary")
+        if orm == "sqlalchemy":
+            deps.append("asyncpg")
+        else:  # peewee
+            deps.append("aiopg")
+    elif db == "mysql":
+        # Mantém ambos para compat (sync e async)
+        deps.extend(["pymysql", "aiomysql"])
+
+    # Compat Python 3.12: fixe peewee-async numa versão estável
+    if orm == "peewee":
+        deps = [("peewee-async==0.7.1" if d == "peewee-async" else d) for d in deps]
+
     return deps
 
 
@@ -504,14 +520,14 @@ def bootstrap(project_dir: Path, vars: dict, create_venv: bool) -> None:
     _, py, pip = venv_paths(project_dir)
 
     print("\n[+] Atualizando pip...")
-    run([str(pip), "install", "-U", "pip"], cwd=project_dir)
+    run([str(py), "-m", "pip", "install", "-U", "pip"], cwd=project_dir)
 
     print("\n[+] Instalando dependências...")
     deps = get_dependencies(vars["orm"], vars["db"])
-    run([str(pip), "install", "-U"] + deps, cwd=project_dir)
+    run([str(py), "-m", "pip", "install", "-U"] + deps, cwd=project_dir)
 
     print("\n[+] Gerando requirements.txt...")
-    out = subprocess.check_output([str(pip), "freeze"], cwd=str(project_dir))
+    out = subprocess.check_output([str(py), "-m", "pip", "freeze"], cwd=str(project_dir))
     (project_dir / "requirements.txt").write_bytes(out)
 
     if vars["orm"] == "sqlalchemy":
