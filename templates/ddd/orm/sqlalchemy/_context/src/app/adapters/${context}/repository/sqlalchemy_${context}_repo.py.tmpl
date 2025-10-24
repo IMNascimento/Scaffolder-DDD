@@ -20,8 +20,8 @@ class SA${ContextCap}Repository(${ContextCap}Repository):
         self._session.add(model)
         await self._session.flush()
 
-    async def get(self, id: UUID) -> ${ContextCap} | None:
-        stmt = select(${ContextCap}Model).where(${ContextCap}Model.id == str(id))
+    async def get(self, ${context}_id: UUID) -> ${ContextCap} | None:
+        stmt = select(${ContextCap}Model).where(${ContextCap}Model.id == str(${context}_id))
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
         return to_domain(model) if model else None

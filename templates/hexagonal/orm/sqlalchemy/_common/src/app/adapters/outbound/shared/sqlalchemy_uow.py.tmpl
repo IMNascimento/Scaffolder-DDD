@@ -18,12 +18,12 @@ ${uow_properties}    # propriedades tipadas, uma por context (ex: customers: Cus
         self._session: Optional[AsyncSession] = None
 ${uow_cache_fields}    # caches (ex: _customers: CustomerRepository | None = None)
 
-    async def __enter__(self) -> "SAUnitOfWork":
+    async def __aenter__(self) -> "SAUnitOfWork":
         self._session = await self._session_cm.__enter__()
 ${uow_repo_inits}        # ex: self._customers = SACustomerRepository(self._session)
         return self
 
-    async def __exit__(self, exc_type, exc, tb) -> None:
+    async def __aexit__(self, exc_type, exc, tb) -> None:
         try:
             if exc_type:
                 await self.rollback()

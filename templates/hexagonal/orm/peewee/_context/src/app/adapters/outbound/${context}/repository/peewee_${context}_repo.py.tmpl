@@ -20,8 +20,8 @@ class PW${ContextCap}Repository(${ContextCap}Repository):
         model = to_model(entity)
         await self._mgr.create(${ContextCap}Model, **model.__data__)
 
-    async def get(self, id: UUID) -> ${ContextCap} | None:
-        model = await self._mgr.get_or_none(${ContextCap}Model, id=str(id))
+    async def get(self, ${context}_id: UUID) -> ${ContextCap} | None:
+        model = await self._mgr.get_or_none(${ContextCap}Model, ${context}_id=str(${context}_id))
         return to_domain(model) if model else None
 
     async def by_email(self, email: str) -> ${ContextCap} | None:

@@ -1,0 +1,97 @@
+# Padrão de Mensagens de Commit (Conventional Commits)
+
+> **Formato base**
+```
+<tipo>(<escopo>)! : <resumo no imperativo, curto>
+<linha em branco>
+<corpo opcional: o que e por quê, não “como”>
+<linha em branco>
+<footer opcional: refs, BREAKING CHANGE, Co-authored-by, Closes #123>
+```
+
+## Tipos mais usados
+- `feat` – nova funcionalidade
+- `fix` – correção de bug
+- `chore` – manutenção/infra (build, deps, scripts), sem mudar código de app
+- `refactor` – refatoração sem alterar comportamento
+- `perf` – melhoria de performance
+- `docs` – documentação
+- `test` – testes
+- `style` – formatação/linters (sem lógica)
+- `ci` – pipeline/CI
+- `revert` – reverte commit anterior
+
+> Use **`!`** após o tipo/escopo quando houver **mudança quebrando compatibilidade** (breaking change).
+
+## Regras rápidas
+- Resumo até **50–72 chars**, imperativo: “adiciona”, “corrige”, “remove”.
+- Corpo (se houver): **o que** e **por quê**; quebre linhas ~72 chars.
+- Sempre que fechar issue/PR: `Closes #123` / `Refs #456`.
+- Para breaking changes: explique no **footer**.
+
+## Exemplos
+
+**feat com escopo e corpo**
+```
+feat(auth): adiciona 2FA via WhatsApp
+
+Implementa fluxo de envio e verificação de código pelo WhatsApp.
+Motivação: reduzir atrito no login e aumentar segurança.
+
+Closes #42
+```
+
+**fix simples**
+```
+fix(api): corrige status 500 ao validar token expirado
+```
+
+**chore de dependências**
+```
+chore(deps): atualiza react-query para 5.51.0
+```
+
+**refactor**
+```
+refactor(ui): extrai OTPInput para componente reutilizável
+```
+
+**docs**
+```
+docs(readme): adiciona instruções de setup do ambiente
+```
+
+**test**
+```
+test(auth): cobre verifyOtpMutation com casos de erro
+```
+
+**perf**
+```
+perf(db): adiciona índice em users(email) para login mais rápido
+```
+
+**breaking change**
+```
+feat(api)!: muda rota de /v1/login para /v2/auth/login
+
+BREAKING CHANGE: rotas v1 de autenticação foram removidas.
+Atualize o cliente para usar /v2/auth/login.
+```
+
+**revert**
+```
+revert: reverte "feat(api)!: muda rota de /v1/login para /v2/auth/login"
+
+Este revert retorna as rotas v1 temporariamente.
+Reverts commit abc1234.
+```
+
+## Checklist antes de commitar
+- [ ] Tipo correto (`feat`, `fix`, `chore`, …)
+- [ ] Resumo curto, claro e no imperativo
+- [ ] Corpo explica **o que/por quê** (se necessário)
+- [ ] Issues referenciadas (`Closes #...`)
+- [ ] `!` e `BREAKING CHANGE` se quebrar compatibilidade
+
+> Dica: mantenha **um commit por intenção**. Commits pequenos facilitam code review e revert.

@@ -3,7 +3,7 @@ from uuid import uuid4
 from peewee import Model, CharField, BooleanField
 
 # BaseModel vem do combo do DB e já está bound ao database/Manager
-from ${module_name}.adapters.shared.db import BaseModel  # subclass de peewee.Model com _meta.database
+from ${module_name}.adapters.shared.db.db import BaseModel  # subclass de peewee.Model com _meta.database
 
 class ${ContextCap}Model(BaseModel):
     class Meta:

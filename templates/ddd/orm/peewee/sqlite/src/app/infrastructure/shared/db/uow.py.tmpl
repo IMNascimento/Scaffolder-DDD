@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from ${module_name}.infrastructure.shared.db import connection_scope  # mesmo pacote
+from ${module_name}.infrastructure.shared.db.db import connection_scope  # mesmo pacote
 
 @contextmanager
 def unit_of_work():

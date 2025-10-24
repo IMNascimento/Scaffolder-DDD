@@ -4,7 +4,7 @@ from ${module_name}.domain.${context}.entities import ${ContextCap}
 
 def to_domain(model: ${ContextCap}Model) -> ${ContextCap}:
     return ${ContextCap}(
-        id=UUID(model.id),
+        ${context}_id=UUID(model.id),
         name=model.name,
         email=model.email,
         is_active=model.is_active
@@ -12,7 +12,7 @@ def to_domain(model: ${ContextCap}Model) -> ${ContextCap}:
 
 def to_model(entity: ${ContextCap}) -> ${ContextCap}Model:
     return ${ContextCap}Model(
-        id=str(entity.id),
+        ${context}_id=str(entity.id),
         name=entity.name,
         email=entity.email,
         is_active=entity.is_active

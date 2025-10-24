@@ -17,12 +17,12 @@ ${uow_properties}
         self._mgr: Optional[Manager] = None
 ${uow_cache_fields}
 
-    async def __enter__(self) -> "PWUnitOfWork":
+    async def __aenter__(self) -> "PWUnitOfWork":
         self._mgr = await self._mgr_cm.__enter__()
 ${uow_repo_inits}
         return self
 
-    async def __exit__(self, exc_type, exc, tb) -> None:
+    async def __aexit__(self, exc_type, exc, tb) -> None:
         try:
             # commit/rollback explícitos devem acontecer quando você abrir transações:
             # async with self._mgr.transaction(): ...

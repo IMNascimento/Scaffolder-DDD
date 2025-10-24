@@ -4,7 +4,7 @@ from sqlalchemy import String, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 
 # Base vem do combo do DB (postgres/mysql) e expõe o Declarative Base
-from ${module_name}.infrastructure.shared.db import Base  # DeclarativeBase
+from ${module_name}.infrastructure.shared.db.db import Base  # DeclarativeBase
 
 class ${ContextCap}Model(Base):
     __tablename__ = "${table_name}"  # ex.: "payments" (ver nota de pluralização)
